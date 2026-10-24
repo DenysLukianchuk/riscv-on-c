@@ -1,0 +1,73 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "rv64",
+      "displayName": "RV64, sanitizers",
+      "inherits": "base",
+      "cacheVariables": { "XLEN": "64", "SANITIZE": "ON" }
+    },
+    {
+      "name": "rv32",
+      "displayName": "RV32, sanitizers",
+      "inherits": "base",
+      "cacheVariables": { "XLEN": "32", "SANITIZE": "ON" }
+    },
+    {
+      "name": "rv64-nosan",
+      "displayName": "RV64, no sanitizers",
+      "inherits": "base",
+      "cacheVariables": { "XLEN": "64", "SANITIZE": "OFF" }
+    },
+    {
+      "name": "rv32-nosan",
+      "displayName": "RV32, no sanitizers",
+      "inherits": "base",
+      "cacheVariables": { "XLEN": "32", "SANITIZE": "OFF" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "rv64", "configurePreset": "rv64" },
+    { "name": "rv32", "configurePreset": "rv32" },
+    { "name": "rv64-nosan", "configurePreset": "rv64-nosan" },
+    { "name": "rv32-nosan", "configurePreset": "rv32-nosan" }
+  ],
+  "testPresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error" }
+    },
+    { "name": "rv64", "inherits": "base", "configurePreset": "rv64" },
+    { "name": "rv32", "inherits": "base", "configurePreset": "rv32" },
+    { "name": "rv64-nosan", "inherits": "base", "configurePreset": "rv64-nosan" },
+    { "name": "rv32-nosan", "inherits": "base", "configurePreset": "rv32-nosan" }
+  ],
+  "workflowPresets": [
+    {
+      "name": "rv64",
+      "steps": [
+        { "type": "configure", "name": "rv64" },
+        { "type": "build", "name": "rv64" },
+        { "type": "test", "name": "rv64" }
+      ]
+    },
+    {
+      "name": "rv32",
+      "steps": [
+        { "type": "configure", "name": "rv32" },
+        { "type": "build", "name": "rv32" },
+        { "type": "test", "name": "rv32" }
+      ]
+    }
+  ]
+}

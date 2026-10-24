@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.preset }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [rv64, rv32]
+    permissions:
+      contents: read
+      checks: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build gcc-riscv64-linux-gnu
+
+      # ASan in GCC's runtime cannot cope with the runner kernel's high mmap
+      # randomisation; lower it to the value ASan expects.
+      - name: Allow AddressSanitizer
+        run: sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }} --output-junit junit.xml
+
+      - name: Report
+        if: always()
+        uses: mikepenz/action-junit-report@v4
+        with:
+          report_paths: build/${{ matrix.preset }}/junit.xml
+          check_name: tests (${{ matrix.preset }})

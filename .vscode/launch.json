@@ -1,0 +1,43 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug current test (rv64)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/rv64/tests/${fileBasenameNoExtension}",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build current test (rv64)",
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "environment": [
+        // LeakSanitizer cannot run under ptrace; abort so gdb stops on sanitizer reports
+        { "name": "ASAN_OPTIONS", "value": "detect_leaks=0:abort_on_error=1" },
+        { "name": "UBSAN_OPTIONS", "value": "abort_on_error=1:print_stacktrace=1" }
+      ],
+      "setupCommands": [
+        { "text": "-enable-pretty-printing", "ignoreFailures": true },
+        // stop on every failed Unity assertion; go one frame up to reach the test
+        { "text": "-break-insert -f UnityTestResultsFailBegin", "ignoreFailures": true }
+      ]
+    },
+    {
+      "name": "Debug current test (rv32)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/rv32/tests/${fileBasenameNoExtension}",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build current test (rv32)",
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "environment": [
+        { "name": "ASAN_OPTIONS", "value": "detect_leaks=0:abort_on_error=1" },
+        { "name": "UBSAN_OPTIONS", "value": "abort_on_error=1:print_stacktrace=1" }
+      ],
+      "setupCommands": [
+        { "text": "-enable-pretty-printing", "ignoreFailures": true },
+        { "text": "-break-insert -f UnityTestResultsFailBegin", "ignoreFailures": true }
+      ]
+    }
+  ]
+}

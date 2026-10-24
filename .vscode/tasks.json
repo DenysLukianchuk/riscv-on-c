@@ -1,0 +1,29 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build current test (rv64)",
+      "type": "shell",
+      "command": "cmake --preset rv64 > /dev/null && cmake --build --preset rv64 --target ${fileBasenameNoExtension}",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "build",
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "build current test (rv32)",
+      "type": "shell",
+      "command": "cmake --preset rv32 > /dev/null && cmake --build --preset rv32 --target ${fileBasenameNoExtension}",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "build",
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "test all",
+      "type": "shell",
+      "command": "./scripts/test-all.sh",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": ["$gcc"]
+    }
+  ]
+}
