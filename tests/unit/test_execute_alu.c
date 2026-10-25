@@ -291,12 +291,6 @@ static void test_auipc_adds_upper_immediate_to_pc(void) {
   TEST_ASSERT_EQUAL_HEX64(0x92345000, get_reg(1));
 }
 
-#define MUL_X1_X2_X3 0x023100B3
-
-static void test_op_with_m_extension_funct7_raises_illegal_instruction(void) {
-  TEST_ASSERT_ILLEGAL_INSTRUCTION(MUL_X1_X2_X3);
-}
-
 #define ADD_WITH_FUNCT7_0X40_X1_X2_X3 0x803100B3
 
 static void test_op_with_unknown_funct7_raises_illegal_instruction(void) {
@@ -481,12 +475,10 @@ static void test_op_32_without_w_variant_raises_illegal_instruction(void) {
   TEST_ASSERT_ILLEGAL_INSTRUCTION(OP_32_FUNCT3_7_X1_X2_X3);
 }
 
-#define MULW_X1_X2_X3 0x023100BB
 #define ADDW_WITH_FUNCT7_0X40_X1_X2_X3 0x803100BB
 #define SLLW_WITH_FUNCT7_0X20_X1_X2_X3 0x403110BB
 
 static void test_op_32_with_invalid_funct7_raises_illegal_instruction(void) {
-  TEST_ASSERT_ILLEGAL_INSTRUCTION(MULW_X1_X2_X3);
   TEST_ASSERT_ILLEGAL_INSTRUCTION(ADDW_WITH_FUNCT7_0X40_X1_X2_X3);
   TEST_ASSERT_ILLEGAL_INSTRUCTION(SLLW_WITH_FUNCT7_0X20_X1_X2_X3);
 }
@@ -534,7 +526,6 @@ int main(void) {
   RUN_TEST(test_lui_writes_upper_immediate_to_rd);
   RUN_TEST(test_lui_sign_extends_bit_31_to_xlen);
   RUN_TEST(test_auipc_adds_upper_immediate_to_pc);
-  RUN_TEST(test_op_with_m_extension_funct7_raises_illegal_instruction);
   RUN_TEST(test_op_with_unknown_funct7_raises_illegal_instruction);
   RUN_TEST(test_op_with_funct7_0x20_outside_sub_and_sra_raises_illegal);
   RUN_TEST(test_slli_with_bit_30_set_raises_illegal_instruction);

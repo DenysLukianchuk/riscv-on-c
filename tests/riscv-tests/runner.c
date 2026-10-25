@@ -111,8 +111,8 @@ static int run(Bus *bus, Cpu *cpu, uint64_t tohost_addr, const char *name) {
     if (tohost == 1)
       return EXIT_SUCCESS;
     if (tohost != 0) {
-      fprintf(stderr, "%s: test case %llu failed\n", name,
-              (unsigned long long)(tohost >> 1));
+      fprintf(stderr, "%s: test case %llu failed (tohost = 0x%llx)\n", name,
+              (unsigned long long)(tohost >> 1), (unsigned long long)tohost);
       return EXIT_FAILURE;
     }
   }

@@ -92,7 +92,6 @@ static void test_mtvec_vectored_mode_is_preserved(void) {
   TEST_ASSERT_EQUAL_HEX64(0x80000101, value);
 }
 
-// mstatus.MIE (bit 3) is the global machine-mode interrupt enable.
 static void test_mstatus_mie_bit_can_be_set(void) {
   TEST_ASSERT_EQUAL(CSR_OK, csr_write(csrs, CSR_REG_MSTATUS, 0x8));
 
@@ -114,6 +113,23 @@ static void test_mie_machine_interrupt_enables_can_be_written(void) {
   TEST_ASSERT_EQUAL_HEX64(enables, value);
 }
 
+static void test_misa_reports_xlen_and_implemented_extensions(void) {
+  uxlen_t value = 0;
+
+  TEST_ASSERT_EQUAL(CSR_OK, csr_read(csrs, CSR_REG_MISA, &value));
+  TEST_ASSERT_EQUAL_HEX64(MISA_MXL | MISA_I | MISA_M | MISA_U, value);
+}
+
+static void test_machine_id_csrs_read_zero(void) {
+  static const uint16_t ids[] = {CSR_REG_MVENDORID, CSR_REG_MARCHID,
+                                 CSR_REG_MIMPID};
+  for (unsigned i = 0; i < sizeof ids / sizeof ids[0]; i++) {
+    uxlen_t value = 0xFF;
+    TEST_ASSERT_EQUAL(CSR_OK, csr_read(csrs, ids[i], &value));
+    TEST_ASSERT_EQUAL_HEX64(0, value);
+  }
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_mscratch_written_value_can_be_read_back);
@@ -129,5 +145,7 @@ int main(void) {
   RUN_TEST(test_mtvec_vectored_mode_is_preserved);
   RUN_TEST(test_mstatus_mie_bit_can_be_set);
   RUN_TEST(test_mie_machine_interrupt_enables_can_be_written);
+  RUN_TEST(test_misa_reports_xlen_and_implemented_extensions);
+  RUN_TEST(test_machine_id_csrs_read_zero);
   return UNITY_END();
 }

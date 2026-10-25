@@ -72,6 +72,45 @@ static void test_instruction_access_fault_ignores_mtvec_mode_bits(void) {
   TEST_ASSERT_EQUAL_HEX64(TRAP_HANDLER, cpu_get_pc(cpu));
 }
 
+#define NOP 0x00000013
+
+static void test_minstret_counts_retired_instructions(void) {
+  for (int i = 0; i < 3; i++)
+    bus_write(bus, RAM_BASE + 4 * i, NOP, 4);
+  cpu_set_pc(cpu, RAM_BASE);
+  write_csr(CSR_REG_MINSTRET, 0);
+
+  for (int i = 0; i < 3; i++)
+    cpu_step(cpu);
+
+  TEST_ASSERT_EQUAL_HEX64(3, read_csr(CSR_REG_MINSTRET));
+}
+
+#define CSRR_X1_MINSTRET 0xB02020F3
+
+static void test_minstret_is_readable_at_its_csr_address(void) {
+  bus_write(bus, RAM_BASE, NOP, 4);
+  bus_write(bus, RAM_BASE + 4, CSRR_X1_MINSTRET, 4);
+  cpu_set_pc(cpu, RAM_BASE);
+  write_csr(CSR_REG_MCAUSE, 0xFF);
+
+  cpu_step(cpu);
+  cpu_step(cpu);
+
+  TEST_ASSERT_EQUAL_HEX64(0xFF, read_csr(CSR_REG_MCAUSE));
+  TEST_ASSERT_EQUAL_HEX64(1, get_reg(1));
+}
+
+static void test_trapping_instruction_does_not_retire(void) {
+  bus_write(bus, RAM_BASE, ALL_ZEROS_INSTRUCTION, 4);
+  cpu_set_pc(cpu, RAM_BASE);
+  write_csr(CSR_REG_MINSTRET, 0);
+
+  cpu_step(cpu);
+
+  TEST_ASSERT_EQUAL_HEX64(0, read_csr(CSR_REG_MINSTRET));
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_execute_advances_pc_to_next_instruction);
@@ -81,5 +120,8 @@ int main(void) {
   RUN_TEST(test_fetch_from_unmapped_address_raises_instruction_access_fault);
   RUN_TEST(test_instruction_access_fault_jumps_to_trap_handler);
   RUN_TEST(test_instruction_access_fault_ignores_mtvec_mode_bits);
+  RUN_TEST(test_minstret_counts_retired_instructions);
+  RUN_TEST(test_minstret_is_readable_at_its_csr_address);
+  RUN_TEST(test_trapping_instruction_does_not_retire);
   return UNITY_END();
 }

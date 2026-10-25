@@ -1,6 +1,5 @@
 #include "riscv/hart.h"
 #include "riscv/bus.h"
-#include "riscv/csr.h"
 #include "riscv/execute.h"
 #include "riscv/trap.h"
 
@@ -10,12 +9,12 @@ void cpu_step(Cpu *cpu) {
   int res =
       bus_read(cpu_get_bus(cpu), pc, INSTRUCTION_WIDTH_BYTES, &instruction);
   if (res != 0) {
-    trap_raise(cpu_get_csr(cpu), cpu_get_pc(cpu), TRAP_INSTRUCTION_ACCESS_FAULT,
-               pc);
-    csr_read(cpu_get_csr(cpu), CSR_REG_MTVEC, &pc);
-    cpu_set_pc(cpu, pc & ~0x1);
+    cpu_set_pc(cpu,
+               cpu_raise_exception(cpu, TRAP_INSTRUCTION_ACCESS_FAULT, pc));
     return;
   }
   struct Instruction inst = instruction_decode(instruction);
-  cpu_execute(cpu, &inst);
+  if (cpu_execute(cpu, &inst) == EXECUTE_OK)
+    csr_count_instret(cpu_get_csr(cpu));
+  csr_count_cycle(cpu_get_csr(cpu));
 }

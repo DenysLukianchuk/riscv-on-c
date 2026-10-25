@@ -96,6 +96,17 @@ enum Funct3_OP {
   FUNCT3_AND = 0x7,
 };
 
+enum Funct3_M {
+  FUNCT3_MUL = 0x0,
+  FUNCT3_MULH = 0x1,
+  FUNCT3_MULHSU = 0x2,
+  FUNCT3_MULHU = 0x3,
+  FUNCT3_DIV = 0x4,
+  FUNCT3_DIVU = 0x5,
+  FUNCT3_REM = 0x6,
+  FUNCT3_REMU = 0x7
+};
+
 enum Funct3_Branch {
   FUNCT3_BEQ = 0x0,
   FUNCT3_BNE = 0x1,
@@ -135,7 +146,11 @@ enum Funct3_FENCE { FUNCT3_FENCE = 0x0, FUNCT3_FENCE_I = 0x1 };
 
 enum Funct3_JALR { FUNCT3_JALR = 0x0 };
 
-enum Funct7 { FUNCT7_ADD = 0x00, FUNCT7_SUB = 0x20, FUNCT7_M_EXTENSION = 0x01 };
+enum Funct7 {
+  FUNCT7_ADD = 0x00,
+  FUNCT7_MUL = 0x01,
+  FUNCT7_SUB = 0x20,
+};
 
 struct Instruction instruction_decode(uint32_t raw);
 
