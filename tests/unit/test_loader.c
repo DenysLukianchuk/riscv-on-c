@@ -123,8 +123,8 @@ static void test_load_returns_entry_point(void) {
 #define BACKGROUND 0xAAAAAAAAAAAAAAAA
 
 static uint64_t load_over_background(uint64_t filesz, uint64_t memsz) {
-  bus_write(bus, RAM_BASE + 0x100, BACKGROUND, 8);
-  bus_write(bus, RAM_BASE + 0x108, BACKGROUND, 8);
+  bus_write(bus, RAM_BASE + 0x100, 8, BACKGROUND);
+  bus_write(bus, RAM_BASE + 0x108, 8, BACKGROUND);
   uint8_t image[256];
   memset(image, 0x55, sizeof image);
   struct Segment segment = {RAM_BASE + 0x100, ADDI_X1_X0_5, filesz, memsz};

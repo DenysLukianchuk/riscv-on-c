@@ -9,9 +9,13 @@
 #include "riscv/hart.h"
 #include "riscv/memory.h"
 #include "riscv/registers.h"
+#include "riscv_asm.h"
+#include "riscv_spec.h"
 #include "unity.h"
 
 #define TEST_RAM_SIZE 4096
+#define TRAP_HANDLER (RAM_BASE + 0x400)
+#define UNMAPPED_ADDR 0x10
 
 static Memory *mem;
 static Bus *bus;
@@ -34,6 +38,18 @@ static inline void execute_raw(uint32_t raw) {
   cpu_execute(cpu, &inst);
 }
 
+// Copies a program to the start of RAM and points pc at it.
+static inline void load_program(const uint32_t *program, size_t count) {
+  for (size_t i = 0; i < count; i++)
+    bus_write(bus, RAM_BASE + 4 * i, 4, program[i]);
+  cpu_set_pc(cpu, RAM_BASE);
+}
+
+static inline void run_steps(unsigned steps) {
+  for (unsigned i = 0; i < steps; i++)
+    cpu_step(cpu);
+}
+
 static inline uxlen_t get_reg(uint8_t index) {
   return registers_read(cpu_get_registers(cpu), index);
 }
@@ -44,24 +60,27 @@ static inline void set_reg(uint8_t index, uxlen_t value) {
 
 static inline uxlen_t read_csr(uint16_t addr) {
   uxlen_t value = 0;
-  csr_read(cpu_get_csr(cpu), addr, &value);
+  csr_read(cpu_get_csr(cpu), addr, PRIV_M, &value);
   return value;
 }
 
 static inline void write_csr(uint16_t addr, uxlen_t value) {
-  csr_write(cpu_get_csr(cpu), addr, value);
+  csr_write(cpu_get_csr(cpu), addr, PRIV_M, value);
 }
 
-// A macro rather than a function so that a failure points at the caller's
-// line. mcause and mtval are cleared first so a trap left over from an earlier
-// check cannot make this one pass.
-#define TEST_ASSERT_ILLEGAL_INSTRUCTION(raw)                                   \
+// Macros rather than functions so that a failure points at the caller's line.
+// mcause and mtval are cleared first so a trap left over from an earlier check
+// cannot make this one pass.
+#define TEST_ASSERT_TRAP(raw, cause, tval)                                     \
   do {                                                                         \
-    write_csr(CSR_REG_MCAUSE, 0);                                              \
-    write_csr(CSR_REG_MTVAL, 0);                                               \
+    write_csr(MCAUSE, 0);                                                      \
+    write_csr(MTVAL, 0);                                                       \
     execute_raw(raw);                                                          \
-    TEST_ASSERT_EQUAL_HEX64(2, read_csr(CSR_REG_MCAUSE));                      \
-    TEST_ASSERT_EQUAL_HEX64((raw), read_csr(CSR_REG_MTVAL));                   \
+    TEST_ASSERT_EQUAL_HEX64((cause), read_csr(MCAUSE));                        \
+    TEST_ASSERT_EQUAL_HEX64((tval), read_csr(MTVAL));                          \
   } while (0)
+
+#define TEST_ASSERT_ILLEGAL_INSTRUCTION(raw)                                   \
+  TEST_ASSERT_TRAP(raw, CAUSE_ILLEGAL_INSTRUCTION, raw)
 
 #endif // TESTS_CPU_FIXTURE_H

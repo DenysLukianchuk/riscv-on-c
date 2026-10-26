@@ -12,6 +12,6 @@ typedef struct Bus Bus;
 Bus *bus_create(Memory *memory);
 void bus_destroy(Bus *bus);
 enum BusStatus bus_read(Bus *bus, uxlen_t addr, unsigned size, uint64_t *value);
-enum BusStatus bus_write(Bus *bus, uxlen_t addr, uint64_t value, unsigned size);
+enum BusStatus bus_write(Bus *bus, uxlen_t addr, unsigned size, uint64_t value);
 
 #endif // RISCV_BUS_H

@@ -26,8 +26,8 @@ enum BusStatus bus_read(Bus *bus, uxlen_t addr, unsigned size,
   return BUS_OK;
 }
 
-enum BusStatus bus_write(Bus *bus, uxlen_t addr, uint64_t value,
-                         unsigned size) {
+enum BusStatus bus_write(Bus *bus, uxlen_t addr, unsigned size,
+                         uint64_t value) {
   uxlen_t offset = addr - RAM_BASE;
   if (addr < RAM_BASE) {
     return BUS_ACCESS_FAULT;
@@ -35,6 +35,6 @@ enum BusStatus bus_write(Bus *bus, uxlen_t addr, uint64_t value,
   if (offset + size - 1 >= memory_get_size(bus->memory)) {
     return BUS_ACCESS_FAULT;
   }
-  memory_write(bus->memory, offset, value, size);
+  memory_write(bus->memory, offset, size, value);
   return BUS_OK;
 }

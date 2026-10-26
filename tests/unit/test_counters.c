@@ -1,26 +1,6 @@
 #include "cpu_fixture.h"
 
-#define MCYCLE 0xB00
-#define MINSTRET 0xB02
-#define MCYCLEH 0xB80
-#define MINSTRETH 0xB82
-
-#define NOP 0x00000013
-#define ILLEGAL_INSTRUCTION 0x00000000
-#define CSRR_X1_CYCLE 0xC00020F3
-#define CSRR_X1_INSTRET 0xC02020F3
-#define CSRW_CYCLE_X0 0xC0001073
-
-static void load_program(const uint32_t *program, int count) {
-  for (int i = 0; i < count; i++)
-    bus_write(bus, RAM_BASE + 4 * i, program[i], 4);
-  cpu_set_pc(cpu, RAM_BASE);
-}
-
-static void run_steps(int steps) {
-  for (int i = 0; i < steps; i++)
-    cpu_step(cpu);
-}
+#define COUNTEREN_ALL (COUNTEREN_CY | COUNTEREN_IR)
 
 static void load_and_step(const uint32_t *program, int count) {
   load_program(program, count);
@@ -29,7 +9,7 @@ static void load_and_step(const uint32_t *program, int count) {
 
 static uxlen_t read_counter(uint16_t addr) {
   uxlen_t value = 0;
-  TEST_ASSERT_EQUAL(CSR_OK, csr_read(cpu_get_csr(cpu), addr, &value));
+  TEST_ASSERT_EQUAL(CSR_OK, csr_read(cpu_get_csr(cpu), addr, PRIV_M, &value));
   return value;
 }
 
@@ -44,10 +24,10 @@ static void test_mcycle_counts_every_step_including_traps(void) {
   TEST_ASSERT_EQUAL_HEX64(1, read_counter(MINSTRET));
 }
 
-static void test_cycle_and_instret_are_readable_from_any_program(void) {
+static void test_cycle_and_instret_mirror_the_machine_counters(void) {
   write_csr(MCYCLE, 0);
   write_csr(MINSTRET, 0);
-  const uint32_t program[] = {NOP, NOP, CSRR_X1_CYCLE, CSRR_X1_INSTRET};
+  const uint32_t program[] = {NOP, NOP, CSRR(1, CYCLE), CSRR(1, INSTRET)};
 
   load_program(program, 4);
 
@@ -59,10 +39,153 @@ static void test_cycle_and_instret_are_readable_from_any_program(void) {
 }
 
 static void test_cycle_is_read_only(void) {
-  TEST_ASSERT_ILLEGAL_INSTRUCTION(CSRW_CYCLE_X0);
+  TEST_ASSERT_ILLEGAL_INSTRUCTION(CSRW(CYCLE, 0));
 }
 
+static void test_write_to_minstret_suppresses_its_own_increment(void) {
+  const uint32_t program[] = {CSRWI(MINSTRET, 5), CSRR(1, MINSTRET)};
+
+  load_and_step(program, 2);
+
+  TEST_ASSERT_EQUAL_HEX64(5, get_reg(1));
+}
+
+static void test_mcounteren_holds_the_cy_and_ir_bits(void) {
+  write_csr(MCOUNTEREN, COUNTEREN_CY | COUNTEREN_IR);
+
+  TEST_ASSERT_EQUAL_HEX64(COUNTEREN_CY | COUNTEREN_IR, read_csr(MCOUNTEREN));
+}
+
+static void test_mcounteren_is_not_accessible_from_user_mode(void) {
+  cpu_set_privilege(cpu, PRIV_U);
+
+  TEST_ASSERT_ILLEGAL_INSTRUCTION(CSRR(1, MCOUNTEREN));
+}
+
+static void test_user_mode_cannot_read_cycle_without_mcounteren_cy(void) {
+  write_csr(MCOUNTEREN, COUNTEREN_IR);
+  write_csr(SCOUNTEREN, COUNTEREN_ALL);
+  cpu_set_privilege(cpu, PRIV_U);
+
+  TEST_ASSERT_ILLEGAL_INSTRUCTION(CSRR(1, CYCLE));
+}
+
+static void test_user_mode_reads_cycle_with_both_counteren_cy(void) {
+  write_csr(MCYCLE, 42);
+  write_csr(MCOUNTEREN, COUNTEREN_CY);
+  write_csr(SCOUNTEREN, COUNTEREN_CY);
+  cpu_set_privilege(cpu, PRIV_U);
+
+  execute_raw(CSRR(1, CYCLE));
+
+  TEST_ASSERT_EQUAL_HEX64(42, get_reg(1));
+}
+
+static void test_user_mode_cannot_read_instret_without_mcounteren_ir(void) {
+  write_csr(MCOUNTEREN, COUNTEREN_CY);
+  write_csr(SCOUNTEREN, COUNTEREN_ALL);
+  cpu_set_privilege(cpu, PRIV_U);
+
+  TEST_ASSERT_ILLEGAL_INSTRUCTION(CSRR(1, INSTRET));
+}
+
+static void test_user_mode_reads_instret_with_both_counteren_ir(void) {
+  write_csr(MINSTRET, 7);
+  write_csr(MCOUNTEREN, COUNTEREN_IR);
+  write_csr(SCOUNTEREN, COUNTEREN_IR);
+  cpu_set_privilege(cpu, PRIV_U);
+
+  execute_raw(CSRR(1, INSTRET));
+
+  TEST_ASSERT_EQUAL_HEX64(7, get_reg(1));
+}
+
+static void test_machine_mode_reads_cycle_regardless_of_mcounteren(void) {
+  write_csr(MCYCLE, 42);
+  write_csr(MCOUNTEREN, 0);
+
+  execute_raw(CSRR(1, CYCLE));
+
+  TEST_ASSERT_EQUAL_HEX64(42, get_reg(1));
+}
+
+static void test_scounteren_holds_the_cy_and_ir_bits(void) {
+  cpu_set_privilege(cpu, PRIV_S);
+  set_reg(2, COUNTEREN_ALL);
+
+  execute_raw(CSRW(SCOUNTEREN, 2));
+  execute_raw(CSRR(1, SCOUNTEREN));
+
+  TEST_ASSERT_EQUAL_HEX64(COUNTEREN_ALL, get_reg(1));
+}
+
+static void test_scounteren_is_not_accessible_from_user_mode(void) {
+  cpu_set_privilege(cpu, PRIV_U);
+
+  TEST_ASSERT_ILLEGAL_INSTRUCTION(CSRR(1, SCOUNTEREN));
+}
+
+static void test_user_mode_cannot_read_cycle_without_scounteren_cy(void) {
+  write_csr(MCOUNTEREN, COUNTEREN_ALL);
+  write_csr(SCOUNTEREN, COUNTEREN_IR);
+  cpu_set_privilege(cpu, PRIV_U);
+
+  TEST_ASSERT_ILLEGAL_INSTRUCTION(CSRR(1, CYCLE));
+}
+
+static void test_user_mode_cannot_read_instret_without_scounteren_ir(void) {
+  write_csr(MCOUNTEREN, COUNTEREN_ALL);
+  write_csr(SCOUNTEREN, COUNTEREN_CY);
+  cpu_set_privilege(cpu, PRIV_U);
+
+  TEST_ASSERT_ILLEGAL_INSTRUCTION(CSRR(1, INSTRET));
+}
+
+static void test_supervisor_mode_reads_cycle_without_scounteren(void) {
+  write_csr(MCYCLE, 42);
+  write_csr(MCOUNTEREN, COUNTEREN_CY);
+  write_csr(SCOUNTEREN, 0);
+  cpu_set_privilege(cpu, PRIV_S);
+
+  execute_raw(CSRR(1, CYCLE));
+
+  TEST_ASSERT_EQUAL_HEX64(42, get_reg(1));
+}
+
+static void test_supervisor_mode_cannot_read_cycle_without_mcounteren_cy(void) {
+  write_csr(MCOUNTEREN, COUNTEREN_IR);
+  write_csr(SCOUNTEREN, COUNTEREN_ALL);
+  cpu_set_privilege(cpu, PRIV_S);
+
+  TEST_ASSERT_ILLEGAL_INSTRUCTION(CSRR(1, CYCLE));
+}
+
+#if XLEN == 64
+static void test_mcounteren_is_32_bits_wide_on_rv64(void) {
+  write_csr(MCOUNTEREN, (uxlen_t)-1);
+
+  TEST_ASSERT_EQUAL_HEX64(0, read_csr(MCOUNTEREN) >> 32);
+}
+
+static void test_scounteren_is_32_bits_wide_on_rv64(void) {
+  write_csr(SCOUNTEREN, (uxlen_t)-1);
+
+  TEST_ASSERT_EQUAL_HEX64(0, read_csr(SCOUNTEREN) >> 32);
+}
+#endif
+
 #if XLEN == 32
+
+static void test_write_to_minstreth_also_suppresses_the_increment(void) {
+  const uint32_t program[] = {LI(5, -1), CSRW(MINSTRET, 5), CSRW(MINSTRETH, 5),
+                              NOP,       CSRR(1, MINSTRET), CSRR(2, MINSTRETH)};
+
+  load_and_step(program, 6);
+
+  TEST_ASSERT_EQUAL_HEX64(0, get_reg(1));
+  TEST_ASSERT_EQUAL_HEX64(0, get_reg(2));
+}
+
 static void test_minstret_carries_into_minstreth_on_rv32(void) {
   write_csr(MINSTRET, 0xFFFFFFFF);
   write_csr(MINSTRETH, 0);
@@ -84,14 +207,41 @@ static void test_mcycle_carries_into_mcycleh_on_rv32(void) {
   TEST_ASSERT_EQUAL_HEX64(0, read_counter(MCYCLE));
   TEST_ASSERT_EQUAL_HEX64(1, read_counter(MCYCLEH));
 }
+
+static void test_mcounteren_cy_also_controls_cycleh(void) {
+  write_csr(MCOUNTEREN, COUNTEREN_IR);
+  cpu_set_privilege(cpu, PRIV_U);
+
+  TEST_ASSERT_ILLEGAL_INSTRUCTION(CSRR(1, CYCLEH));
+}
 #endif
 
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_mcycle_counts_every_step_including_traps);
-  RUN_TEST(test_cycle_and_instret_are_readable_from_any_program);
+  RUN_TEST(test_cycle_and_instret_mirror_the_machine_counters);
   RUN_TEST(test_cycle_is_read_only);
+  RUN_TEST(test_write_to_minstret_suppresses_its_own_increment);
+  RUN_TEST(test_mcounteren_holds_the_cy_and_ir_bits);
+  RUN_TEST(test_mcounteren_is_not_accessible_from_user_mode);
+  RUN_TEST(test_user_mode_cannot_read_cycle_without_mcounteren_cy);
+  RUN_TEST(test_user_mode_reads_cycle_with_both_counteren_cy);
+  RUN_TEST(test_user_mode_cannot_read_instret_without_mcounteren_ir);
+  RUN_TEST(test_user_mode_reads_instret_with_both_counteren_ir);
+  RUN_TEST(test_machine_mode_reads_cycle_regardless_of_mcounteren);
+  RUN_TEST(test_scounteren_holds_the_cy_and_ir_bits);
+  RUN_TEST(test_scounteren_is_not_accessible_from_user_mode);
+  RUN_TEST(test_user_mode_cannot_read_cycle_without_scounteren_cy);
+  RUN_TEST(test_user_mode_cannot_read_instret_without_scounteren_ir);
+  RUN_TEST(test_supervisor_mode_reads_cycle_without_scounteren);
+  RUN_TEST(test_supervisor_mode_cannot_read_cycle_without_mcounteren_cy);
+#if XLEN == 64
+  RUN_TEST(test_mcounteren_is_32_bits_wide_on_rv64);
+  RUN_TEST(test_scounteren_is_32_bits_wide_on_rv64);
+#endif
 #if XLEN == 32
+  RUN_TEST(test_mcounteren_cy_also_controls_cycleh);
+  RUN_TEST(test_write_to_minstreth_also_suppresses_the_increment);
   RUN_TEST(test_minstret_carries_into_minstreth_on_rv32);
   RUN_TEST(test_mcycle_carries_into_mcycleh_on_rv32);
 #endif

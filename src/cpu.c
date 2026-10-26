@@ -8,6 +8,7 @@ struct Cpu {
   Bus *bus;
   Csr *csr;
   enum Privilege privilege;
+  uxlen_t amo_reservation;
 };
 
 Cpu *cpu_create(Bus *bus) {
@@ -17,6 +18,7 @@ Cpu *cpu_create(Bus *bus) {
   cpu->bus = bus;
   cpu->csr = csr_create();
   cpu->privilege = PRIV_M;
+  cpu->amo_reservation = 0;
   return cpu;
 }
 
@@ -34,4 +36,8 @@ Csr *cpu_get_csr(Cpu *cpu) { return cpu->csr; }
 enum Privilege cpu_get_privilege(Cpu *cpu) { return cpu->privilege; }
 void cpu_set_privilege(Cpu *cpu, enum Privilege privilege) {
   cpu->privilege = privilege;
+}
+uxlen_t cpu_get_amo_reservation(Cpu *cpu) { return cpu->amo_reservation; }
+void cpu_set_amo_reservation(Cpu *cpu, uxlen_t amo_reservation) {
+  cpu->amo_reservation = amo_reservation;
 }

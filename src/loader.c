@@ -109,7 +109,7 @@ static bool load_segment(Bus *bus, const uint8_t *image,
                          const struct ElfProgramHeader *ph) {
   for (uxlen_t i = 0; i < ph->memsz; i++) {
     uint8_t byte = i < ph->filesz ? image[ph->offset + i] : 0;
-    if (bus_write(bus, ph->paddr + i, byte, 1) != BUS_OK)
+    if (bus_write(bus, ph->paddr + i, 1, byte) != BUS_OK)
       return false;
   }
   return true;

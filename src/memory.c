@@ -20,7 +20,7 @@ Memory *memory_create(uxlen_t size) {
 
 uxlen_t memory_get_size(Memory *mem) { return mem->size; }
 
-void memory_write(Memory *mem, uxlen_t addr, uint64_t value, unsigned size) {
+void memory_write(Memory *mem, uxlen_t addr, unsigned size, uint64_t value) {
   assert(addr + size - 1 < mem->size);
   ENSURE_VALID_SIZE(size);
   for (unsigned i = 0; i < size; i++) {

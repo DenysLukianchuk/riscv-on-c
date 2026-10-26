@@ -77,9 +77,9 @@ if(BUILD_TESTING)
   endforeach()
 endif()
 
-# Official riscv-tests (base integer, M and machine-mode suites, in the
-# physical-memory environment), built with a RISC-V cross compiler when one is
-# available.
+# Official riscv-tests (base integer, M, A, machine- and supervisor-mode
+# suites, in the physical-memory environment), built with a RISC-V cross
+# compiler when one is available.
 option(RISCV_TESTS "Build and run the official riscv-tests" ON)
 find_program(RISCV_GCC NAMES riscv64-unknown-elf-gcc riscv64-linux-gnu-gcc)
 
@@ -100,16 +100,21 @@ if(BUILD_TESTING AND RISCV_TESTS AND RISCV_GCC)
   target_link_libraries(riscv_tests_runner PRIVATE riscv_core)
 
   set(RISCV_TESTS_DIR ${CMAKE_BINARY_DIR}/riscv-tests)
-  set(RISCV_TEST_SUITES ui um mi)
-  # Machine-mode tests are enabled one by one as the features they need land.
+  set(RISCV_TEST_SUITES ui um ua mi si)
+  # Privileged tests are enabled one by one as the features they need land.
   set(RISCV_MI_TESTS
       ld-misaligned lh-misaligned lw-misaligned sd-misaligned sh-misaligned
-      sw-misaligned ma_addr mcsr sbreak scall shamt zicntr)
+      sw-misaligned ma_addr mcsr sbreak scall shamt zicntr instret_overflow
+      csr)
+  set(RISCV_SI_TESTS csr ma_fetch sbreak scall)
   foreach(suite IN LISTS RISCV_TEST_SUITES)
     file(GLOB RISCV_TEST_SOURCES ${riscv_tests_SOURCE_DIR}/isa/rv${XLEN}${suite}/*.S)
     foreach(test_source IN LISTS RISCV_TEST_SOURCES)
       get_filename_component(name ${test_source} NAME_WE)
       if(suite STREQUAL "mi" AND NOT name IN_LIST RISCV_MI_TESTS)
+        continue()
+      endif()
+      if(suite STREQUAL "si" AND NOT name IN_LIST RISCV_SI_TESTS)
         continue()
       endif()
       set(test_name rv${XLEN}${suite}-p-${name})

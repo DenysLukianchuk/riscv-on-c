@@ -14,7 +14,7 @@ void cpu_step(Cpu *cpu) {
     return;
   }
   struct Instruction inst = instruction_decode(instruction);
-  if (cpu_execute(cpu, &inst) == EXECUTE_OK)
-    csr_count_instret(cpu_get_csr(cpu));
-  csr_count_cycle(cpu_get_csr(cpu));
+  csr_begin_instruction(cpu_get_csr(cpu));
+  int execute_result = cpu_execute(cpu, &inst);
+  csr_end_instruction(cpu_get_csr(cpu), execute_result == EXECUTE_OK);
 }

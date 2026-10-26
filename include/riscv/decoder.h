@@ -82,7 +82,8 @@ enum Opcode {
   OPCODE_OP_IMM_32 = 0x1B,
   OPCODE_OP_32 = 0x3B,
   OPCODE_SYSTEM = 0x73,
-  OPCODE_FENCE = 0x0F
+  OPCODE_FENCE = 0x0F,
+  OPCODE_AMO = 0x2F
 };
 
 enum Funct3_OP {
@@ -145,6 +146,23 @@ enum Funct3_SYSTEM {
 enum Funct3_FENCE { FUNCT3_FENCE = 0x0, FUNCT3_FENCE_I = 0x1 };
 
 enum Funct3_JALR { FUNCT3_JALR = 0x0 };
+
+enum Funct3_AMO { FUNCT3_AMO_W = 2, FUNCT3_AMO_D = 3 };
+enum AMO_Size { AMO_SIZE_W = 4, AMO_SIZE_D = 8 };
+
+enum Funct5_AMO {
+  FUNCT5_AMO_ADD = 0x00,
+  FUNCT5_AMO_SWAP = 0x01,
+  FUNCT5_AMO_LR = 0x02,
+  FUNCT5_AMO_SC = 0x03,
+  FUNCT5_AMO_XOR = 0x04,
+  FUNCT5_AMO_OR = 0x08,
+  FUNCT5_AMO_AND = 0x0C,
+  FUNCT5_AMO_MIN = 0x10,
+  FUNCT5_AMO_MAX = 0x14,
+  FUNCT5_AMO_MINU = 0x18,
+  FUNCT5_AMO_MAXU = 0x1C
+};
 
 enum Funct7 {
   FUNCT7_ADD = 0x00,
