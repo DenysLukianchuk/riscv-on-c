@@ -50,7 +50,8 @@ enum Mstatus {
   MSTATUS_MIE_BIT = 0x8,
   MSTATUS_MPIE_BIT = 0x80,
   MSTATUS_MPP_MASK = 0x1800,
-  MSTATUS_MPP_MACHINE = 0x1800
+  MSTATUS_MPP_MACHINE = 0x1800,
+  MSTATUS_TW_BIT = 0x00200000u
 };
 
 enum Sstatus {
@@ -76,6 +77,7 @@ enum Sstatus {
 #define MISA_M MISA_EXTENSION('M')
 #define MISA_U MISA_EXTENSION('U')
 #define MISA_S MISA_EXTENSION('S')
+#define MISA_A MISA_EXTENSION('A')
 
 typedef struct Csr Csr;
 
@@ -88,5 +90,16 @@ void csr_destroy(Csr *csr);
 
 void csr_begin_instruction(Csr *csr);
 void csr_end_instruction(Csr *csr, bool retired);
+bool csr_breakpoint_on_execute(Csr *csr, enum Privilege privilege, uxlen_t pc,
+                               const uxlen_t *data, uxlen_t *tval);
+bool csr_breakpoint_on_load(Csr *csr, enum Privilege privilege, uxlen_t addr,
+                            uint8_t size, const uxlen_t *data, uxlen_t *tval);
+bool csr_breakpoint_on_store(Csr *csr, enum Privilege privilege, uxlen_t addr,
+                             uint8_t size, const uxlen_t *data, uxlen_t *tval);
+bool csr_breakpoint_on_exception(Csr *csr, enum Privilege handler,
+                                 enum Privilege from, unsigned cause);
+bool csr_breakpoints_enabled(Csr *csr, enum Privilege privilege);
+bool csr_breakpoint_on_icount(Csr *csr, enum Privilege privilege);
+void csr_count_icount(Csr *csr, enum Privilege privilege);
 
 #endif // RISCV_CSR_H

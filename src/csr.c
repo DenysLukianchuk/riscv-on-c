@@ -1,6 +1,7 @@
 #include "riscv/csr.h"
 #include "riscv/bits.h"
 #include "riscv/trap_cause.h"
+#include "riscv/trigger.h"
 #include <stdlib.h>
 
 enum Counteren { COUNTEREN_CY = 1u << 0, COUNTEREN_IR = 1u << 2 };
@@ -11,9 +12,19 @@ struct ModeRegs {
 };
 
 #define SSIP (1u << 1)
+#define MSIP (1u << 3)
 #define STIP (1u << 5)
+#define MTIP (1u << 7)
 #define SEIP (1u << 9)
+#define MEIP (1u << 11)
 #define MIDELEG_WRITABLE (SSIP | STIP | SEIP)
+#define MIE_WRITABLE (SSIP | MSIP | STIP | MTIP | SEIP | MEIP)
+
+#define MSTATUS_WRITABLE                                                       \
+  (SSTATUS_SIE_BIT | MSTATUS_MIE_BIT | SSTATUS_SPIE_BIT | MSTATUS_MPIE_BIT |   \
+   SSTATUS_SPP_BIT | MSTATUS_MPP_MASK | MSTATUS_TW_BIT)
+// MPP value 2 would name H-mode, which this hart does not implement.
+#define MSTATUS_MPP_RESERVED ((uxlen_t)2 << MSTATUS_MPP_SHIFT)
 
 #define CAUSE_BIT(cause) ((uxlen_t)1 << (cause))
 #define MEDELEG_WRITABLE                                                       \
@@ -36,6 +47,7 @@ struct ModeRegs {
 
 struct Csr {
   struct ModeRegs m, s;
+  struct TriggerModule trigger;
   uxlen_t mhartid;
   uxlen_t mstatus;
   uxlen_t mie;
@@ -70,7 +82,7 @@ Csr *csr_create(void) {
   csr->mstatus = 0;
 #endif
   csr->mie = 0;
-  csr->misa = MISA_MXL | MISA_I | MISA_M | MISA_U | MISA_S;
+  csr->misa = MISA_MXL | MISA_I | MISA_M | MISA_U | MISA_S | MISA_A;
   csr->mvendorid = 0;
   csr->marchid = 0;
   csr->mimpid = 0;
@@ -79,6 +91,7 @@ Csr *csr_create(void) {
   csr->minstret_written = false;
   csr->medeleg = 0;
   csr->mideleg = 0;
+  trigger_regs_init(&csr->trigger);
   return csr;
 }
 
@@ -125,6 +138,10 @@ enum CsrResult csr_read(Csr *csr, uint16_t addr, enum Privilege privilege,
                         uxlen_t *value) {
   if (!csr_is_accessible(csr, addr, privilege))
     return CSR_ILLEGAL;
+  if (is_trigger_register(addr)) {
+    *value = trigger_regs_read(&csr->trigger, addr);
+    return CSR_OK;
+  }
   switch (addr) {
   case CSR_REG_MSCRATCH:
   case CSR_REG_SSCRATCH:
@@ -241,16 +258,25 @@ static uxlen_t legalize_status(uxlen_t old_value, uxlen_t value,
   value &= ~(MSTATUS_UXL_MASK | MSTATUS_SXL_MASK);
   value |= (old_value & (MSTATUS_UXL_MASK | MSTATUS_SXL_MASK));
 #endif
-  if (addr == CSR_REG_MSTATUS)
-    return value;
-  else
-    return (old_value & ~SSTATUS_MASK) | (value & SSTATUS_MASK);
+  uxlen_t result;
+  if (addr == CSR_REG_MSTATUS) {
+    result = (old_value & ~MSTATUS_WRITABLE) | (value & MSTATUS_WRITABLE);
+    if ((result & MSTATUS_MPP_MASK) == MSTATUS_MPP_RESERVED)
+      result &= ~MSTATUS_MPP_MASK;
+  } else
+    result = (old_value & ~SSTATUS_MASK) | (value & SSTATUS_MASK);
+
+  return result;
 }
 
 enum CsrResult csr_write(Csr *csr, uint16_t addr, enum Privilege privilege,
                          uxlen_t value) {
   if (!csr_is_accessible(csr, addr, privilege) || csr_is_read_only(addr))
     return CSR_ILLEGAL;
+  if (is_trigger_register(addr)) {
+    trigger_regs_write(&csr->trigger, addr, value);
+    return CSR_OK;
+  }
   switch (addr) {
   case CSR_REG_MSCRATCH:
   case CSR_REG_SSCRATCH:
@@ -279,7 +305,7 @@ enum CsrResult csr_write(Csr *csr, uint16_t addr, enum Privilege privilege,
     csr->mstatus = legalize_status(csr->mstatus, value, addr);
     return CSR_OK;
   case CSR_REG_MIE:
-    csr->mie = value;
+    csr->mie = value & MIE_WRITABLE;
     return CSR_OK;
   case CSR_REG_MCYCLE:
     write_low_half(&csr->mcycle, value);
@@ -307,6 +333,9 @@ enum CsrResult csr_write(Csr *csr, uint16_t addr, enum Privilege privilege,
   case CSR_REG_MIDELEG:
     csr->mideleg = value & MIDELEG_WRITABLE;
     return CSR_OK;
+  case CSR_REG_MISA:
+    // misa is WARL; this hart cannot turn extensions off.
+    return CSR_OK;
   default:
     return CSR_ILLEGAL;
   }
@@ -330,4 +359,54 @@ void csr_end_instruction(Csr *csr, bool retired) {
   if (retired)
     csr_count_instret(csr);
   csr_count_cycle(csr);
+}
+
+static bool breakpoint_enabled(Csr *csr, enum Privilege privilege) {
+  switch (privilege) {
+  case PRIV_M:
+    return csr->mstatus & MSTATUS_MIE_BIT;
+  case PRIV_S:
+    return !(csr->medeleg & CAUSE_BIT(TRAP_BREAKPOINT)) ||
+           (csr->mstatus & SSTATUS_SIE_BIT);
+  case PRIV_U:
+    return true;
+  }
+  return false;
+}
+
+bool csr_breakpoint_on_execute(Csr *csr, enum Privilege privilege, uxlen_t pc,
+                               const uxlen_t *data, uxlen_t *tval) {
+  return breakpoint_enabled(csr, privilege) &&
+         trigger_match_execute(&csr->trigger, privilege, pc, data, tval);
+}
+
+bool csr_breakpoint_on_load(Csr *csr, enum Privilege privilege, uxlen_t addr,
+                            uint8_t size, const uxlen_t *data, uxlen_t *tval) {
+  return breakpoint_enabled(csr, privilege) &&
+         trigger_match_load(&csr->trigger, privilege, addr, size, data, tval);
+}
+
+bool csr_breakpoint_on_store(Csr *csr, enum Privilege privilege, uxlen_t addr,
+                             uint8_t size, const uxlen_t *data, uxlen_t *tval) {
+  return breakpoint_enabled(csr, privilege) &&
+         trigger_match_store(&csr->trigger, privilege, addr, size, data, tval);
+}
+
+bool csr_breakpoint_on_exception(Csr *csr, enum Privilege handler,
+                                 enum Privilege from, unsigned cause) {
+  return breakpoint_enabled(csr, handler) &&
+         trigger_match_exception(&csr->trigger, from, cause);
+}
+
+bool csr_breakpoints_enabled(Csr *csr, enum Privilege privilege) {
+  return breakpoint_enabled(csr, privilege);
+}
+
+bool csr_breakpoint_on_icount(Csr *csr, enum Privilege privilege) {
+  return breakpoint_enabled(csr, privilege) &&
+         trigger_icount_fire(&csr->trigger, privilege);
+}
+
+void csr_count_icount(Csr *csr, enum Privilege privilege) {
+  trigger_icount_count(&csr->trigger, privilege);
 }

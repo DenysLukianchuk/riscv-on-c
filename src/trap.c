@@ -60,7 +60,7 @@ static uxlen_t trap_leave(Csr *csr, const struct TrapMode *mode,
   return csr_get(csr, mode->epc);
 }
 
-uxlen_t cpu_raise_exception(Cpu *cpu, uxlen_t cause, uxlen_t tval) {
+static uxlen_t take_trap(Cpu *cpu, uxlen_t cause, uxlen_t tval, uxlen_t epc) {
   enum Privilege from = cpu_get_privilege(cpu);
   Csr *csr = cpu_get_csr(cpu);
   uxlen_t medeleg;
@@ -72,7 +72,18 @@ uxlen_t cpu_raise_exception(Cpu *cpu, uxlen_t cause, uxlen_t tval) {
     target_mode = &MODE_M;
 
   cpu_set_privilege(cpu, target_mode->privilege);
-  return trap_enter(csr, target_mode, cpu_get_pc(cpu), from, cause, tval);
+  return trap_enter(csr, target_mode, epc, from, cause, tval);
+}
+
+uxlen_t cpu_raise_exception(Cpu *cpu, uxlen_t cause, uxlen_t tval) {
+  enum Privilege from = cpu_get_privilege(cpu);
+  uxlen_t handler = take_trap(cpu, cause, tval, cpu_get_pc(cpu));
+  // An etrigger fires right after the trap, before the handler's first
+  // instruction.
+  if (csr_breakpoint_on_exception(cpu_get_csr(cpu), cpu_get_privilege(cpu),
+                                  from, cause))
+    handler = take_trap(cpu, TRAP_BREAKPOINT, 0, handler);
+  return handler;
 }
 
 uxlen_t cpu_return_from_trap(Cpu *cpu, enum Privilege xret) {

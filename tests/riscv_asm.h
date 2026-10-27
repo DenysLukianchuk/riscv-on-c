@@ -118,6 +118,7 @@
 #define ECALL 0x00000073u
 #define EBREAK 0x00100073u
 #define SRET 0x10200073u
+#define WFI 0x10500073u
 #define MRET 0x30200073u
 
 // The all-zeros word is defined to be an illegal instruction.

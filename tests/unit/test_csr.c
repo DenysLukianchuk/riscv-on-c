@@ -111,13 +111,70 @@ static void test_mie_machine_interrupt_enables_can_be_written(void) {
   TEST_ASSERT_EQUAL_HEX64(enables, value);
 }
 
+static uxlen_t mstatus_after_writing(uxlen_t value) {
+  TEST_ASSERT_EQUAL(CSR_OK, csr_write(csrs, MSTATUS, PRIV_M, value));
+  uxlen_t read = 0;
+  TEST_ASSERT_EQUAL(CSR_OK, csr_read(csrs, MSTATUS, PRIV_M, &read));
+  return read;
+}
+
+static void test_mstatus_keeps_its_implemented_fields(void) {
+  uxlen_t fields = MSTATUS_SIE | MSTATUS_MIE | MSTATUS_SPIE | MSTATUS_MPIE |
+                   MSTATUS_SPP | MSTATUS_MPP_S | MSTATUS_TW;
+
+  uxlen_t value = mstatus_after_writing(fields);
+
+  TEST_ASSERT_EQUAL_HEX64(fields, value & (fields | MSTATUS_MPP));
+}
+
+// No F, V or custom extension state to track, so FS, VS, XS and SD stay 0.
+static void test_mstatus_extension_state_reads_zero(void) {
+  uxlen_t state = MSTATUS_FS | MSTATUS_VS | MSTATUS_XS | MSTATUS_SD;
+
+  TEST_ASSERT_EQUAL_HEX64(0, mstatus_after_writing(state) & state);
+}
+
+static void test_mstatus_endianness_is_fixed_to_little(void) {
+  uxlen_t endianness = MSTATUS_UBE;
+#if XLEN == 64
+  endianness |= MSTATUS_SBE | MSTATUS_MBE;
+#endif
+
+  TEST_ASSERT_EQUAL_HEX64(0, mstatus_after_writing(endianness) & endianness);
+}
+
+// MPP is WARL and holds only implemented modes; 2 (H-mode) is not one.
+static void test_mstatus_mpp_never_holds_an_unimplemented_mode(void) {
+  uxlen_t mpp = mstatus_after_writing(MSTATUS_MPP_H) & MSTATUS_MPP;
+
+  TEST_ASSERT_NOT_EQUAL(MSTATUS_MPP_H, mpp);
+}
+
+static void test_mie_keeps_only_implemented_interrupt_enables(void) {
+  TEST_ASSERT_EQUAL(CSR_OK, csr_write(csrs, MIE, PRIV_M, ~(uxlen_t)0));
+
+  uxlen_t value = 0;
+  TEST_ASSERT_EQUAL(CSR_OK, csr_read(csrs, MIE, PRIV_M, &value));
+  TEST_ASSERT_EQUAL_HEX64(SSIP | MSIP | STIP | MTIP | SEIP | MEIP, value);
+}
+
+#define IMPLEMENTED_MISA                                                       \
+  (MISA_MXL_FIELD | MISA_EXT('A') | MISA_EXT('I') | MISA_EXT('M') |            \
+   MISA_EXT('S') | MISA_EXT('U'))
+
 static void test_misa_reports_xlen_and_implemented_extensions(void) {
   uxlen_t value = 0;
 
   TEST_ASSERT_EQUAL(CSR_OK, csr_read(csrs, MISA, PRIV_M, &value));
-  TEST_ASSERT_EQUAL_HEX64(MISA_MXL_FIELD | MISA_EXT('I') | MISA_EXT('M') |
-                              MISA_EXT('S') | MISA_EXT('U'),
-                          value);
+  TEST_ASSERT_EQUAL_HEX64(IMPLEMENTED_MISA, value);
+}
+
+static void test_misa_write_is_ignored_without_trapping(void) {
+  TEST_ASSERT_EQUAL(CSR_OK, csr_write(csrs, MISA, PRIV_M, 0));
+
+  uxlen_t value = 0;
+  TEST_ASSERT_EQUAL(CSR_OK, csr_read(csrs, MISA, PRIV_M, &value));
+  TEST_ASSERT_EQUAL_HEX64(IMPLEMENTED_MISA, value);
 }
 
 static void test_machine_id_csrs_read_zero(void) {
@@ -143,8 +200,14 @@ int main(void) {
   RUN_TEST(test_mtvec_reserved_mode_reads_back_as_legal);
   RUN_TEST(test_mtvec_vectored_mode_is_preserved);
   RUN_TEST(test_mstatus_mie_bit_can_be_set);
+  RUN_TEST(test_mstatus_keeps_its_implemented_fields);
+  RUN_TEST(test_mstatus_extension_state_reads_zero);
+  RUN_TEST(test_mstatus_endianness_is_fixed_to_little);
+  RUN_TEST(test_mstatus_mpp_never_holds_an_unimplemented_mode);
+  RUN_TEST(test_mie_keeps_only_implemented_interrupt_enables);
   RUN_TEST(test_mie_machine_interrupt_enables_can_be_written);
   RUN_TEST(test_misa_reports_xlen_and_implemented_extensions);
+  RUN_TEST(test_misa_write_is_ignored_without_trapping);
   RUN_TEST(test_machine_id_csrs_read_zero);
   return UNITY_END();
 }

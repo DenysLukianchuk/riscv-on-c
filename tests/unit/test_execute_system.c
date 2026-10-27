@@ -107,6 +107,44 @@ static void test_misc_mem_with_reserved_funct3_raises_illegal(void) {
   TEST_ASSERT_ILLEGAL_INSTRUCTION(MISC_MEM_FUNCT3_2);
 }
 
+// Without interrupts there is nothing to wait for, so wfi may simply retire.
+static void assert_wfi_retires(void) {
+  write_csr(MCAUSE, 0xFF);
+  cpu_set_pc(cpu, RAM_BASE);
+
+  execute_raw(WFI);
+
+  TEST_ASSERT_EQUAL_HEX64(0xFF, read_csr(MCAUSE));
+  TEST_ASSERT_EQUAL_HEX64(RAM_BASE + 4, cpu_get_pc(cpu));
+}
+
+static void test_wfi_in_machine_mode_retires(void) { assert_wfi_retires(); }
+
+static void test_wfi_in_machine_mode_ignores_tw(void) {
+  write_csr(MSTATUS, MSTATUS_TW);
+
+  assert_wfi_retires();
+}
+
+static void test_wfi_in_supervisor_mode_retires(void) {
+  cpu_set_privilege(cpu, PRIV_S);
+
+  assert_wfi_retires();
+}
+
+static void test_wfi_in_supervisor_mode_with_tw_is_illegal(void) {
+  write_csr(MSTATUS, MSTATUS_TW);
+  cpu_set_privilege(cpu, PRIV_S);
+
+  TEST_ASSERT_ILLEGAL_INSTRUCTION(WFI);
+}
+
+static void test_wfi_in_user_mode_is_illegal(void) {
+  cpu_set_privilege(cpu, PRIV_U);
+
+  TEST_ASSERT_ILLEGAL_INSTRUCTION(WFI);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_ecall_in_machine_mode_raises_environment_call_from_m);
@@ -121,5 +159,10 @@ int main(void) {
   RUN_TEST(test_fence_executes_as_no_op);
   RUN_TEST(test_fence_i_executes_as_no_op);
   RUN_TEST(test_misc_mem_with_reserved_funct3_raises_illegal);
+  RUN_TEST(test_wfi_in_machine_mode_retires);
+  RUN_TEST(test_wfi_in_machine_mode_ignores_tw);
+  RUN_TEST(test_wfi_in_supervisor_mode_retires);
+  RUN_TEST(test_wfi_in_supervisor_mode_with_tw_is_illegal);
+  RUN_TEST(test_wfi_in_user_mode_is_illegal);
   return UNITY_END();
 }

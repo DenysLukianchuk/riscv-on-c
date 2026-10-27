@@ -1,7 +1,9 @@
 #include "riscv/execute.h"
 #include "riscv/bits.h"
 #include "riscv/trap.h"
+#include <assert.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 static int trap(Cpu *cpu, uxlen_t cause, uxlen_t tval, uxlen_t *next_pc) {
   *next_pc = cpu_raise_exception(cpu, cause, tval);
@@ -288,6 +290,18 @@ static int execute_branch(Cpu *cpu, const struct Instruction *inst,
   return EXECUTE_OK;
 }
 
+static inline bool load_trigger_hit(Cpu *cpu, uint8_t size, uxlen_t addr,
+                                    const uxlen_t *data, uxlen_t *tval) {
+  return csr_breakpoint_on_load(cpu_get_csr(cpu), cpu_get_privilege(cpu), addr,
+                                size, data, tval);
+}
+
+static inline bool store_trigger_hit(Cpu *cpu, uint8_t size, uxlen_t addr,
+                                     const uxlen_t *data, uxlen_t *tval) {
+  return csr_breakpoint_on_store(cpu_get_csr(cpu), cpu_get_privilege(cpu), addr,
+                                 size, data, tval);
+}
+
 static int execute_load(Cpu *cpu, const struct Instruction *inst,
                         uxlen_t *next_pc) {
   uxlen_t addr = registers_read(cpu_get_registers(cpu), inst->rs1) + inst->imm;
@@ -315,11 +329,19 @@ static int execute_load(Cpu *cpu, const struct Instruction *inst,
   default:
     return illegal_instruction(cpu, inst, next_pc);
   }
+  uxlen_t tval;
+  if (load_trigger_hit(cpu, size, addr, NULL, &tval)) {
+    return trap(cpu, TRAP_BREAKPOINT, tval, next_pc);
+  }
   uint64_t val;
   uint8_t res = bus_read(cpu_get_bus(cpu), addr, size, &val);
   if (res != BUS_OK) {
     return trap(cpu, TRAP_LOAD_ACCESS_FAULT, addr, next_pc);
   }
+
+  uxlen_t data = (uxlen_t)val;
+  if (load_trigger_hit(cpu, size, addr, &data, &tval))
+    return trap(cpu, TRAP_BREAKPOINT, tval, next_pc);
 
   if (inst->funct3 == FUNCT3_LBU || inst->funct3 == FUNCT3_LHU ||
       inst->funct3 == FUNCT3_LWU || inst->funct3 == FUNCT3_LD)
@@ -353,11 +375,29 @@ static int execute_store(Cpu *cpu, const struct Instruction *inst,
   default:
     return illegal_instruction(cpu, inst, next_pc);
   }
+  uxlen_t tval;
+  if (store_trigger_hit(cpu, size, addr, NULL, &tval)) {
+    return trap(cpu, TRAP_BREAKPOINT, tval, next_pc);
+  }
   uint64_t val = registers_read(cpu_get_registers(cpu), inst->rs2);
+  uxlen_t data = truncate_to_size(val, size);
+  if (store_trigger_hit(cpu, size, addr, &data, &tval)) {
+    return trap(cpu, TRAP_BREAKPOINT, tval, next_pc);
+  }
   uint8_t res = bus_write(cpu_get_bus(cpu), addr, size, val);
   if (res != BUS_OK) {
     return trap(cpu, TRAP_STORE_ACCESS_FAULT, addr, next_pc);
   }
+  return EXECUTE_OK;
+}
+
+static int execute_wfi(Cpu *cpu, const struct Instruction *inst,
+                       enum Privilege privilege, uxlen_t *next_pc) {
+  uxlen_t mstatus;
+  csr_read(cpu_get_csr(cpu), CSR_REG_MSTATUS, PRIV_M, &mstatus);
+  bool tw = mstatus & MSTATUS_TW_BIT;
+  if (privilege == PRIV_U || (privilege == PRIV_S && tw))
+    return illegal_instruction(cpu, inst, next_pc);
   return EXECUTE_OK;
 }
 
@@ -374,6 +414,8 @@ static int execute_system(Cpu *cpu, const struct Instruction *inst,
   } else if (privilege >= PRIV_S && inst->raw == TRAP_INSTRUCTION_SRET) {
     *next_pc = cpu_return_from_trap(cpu, PRIV_S);
     return EXECUTE_OK;
+  } else if (inst->raw == TRAP_INSTRUCTION_WFI) {
+    return execute_wfi(cpu, inst, privilege, next_pc);
   }
 
   uint32_t csr_addr = (uint32_t)(inst->imm & 0xFFF);
@@ -434,11 +476,20 @@ static int execute_fence(Cpu *cpu, const struct Instruction *inst,
 static int amo_lr(Cpu *cpu, const struct Instruction *inst, uint8_t size,
                   uxlen_t *next_pc) {
   uxlen_t rs1_addr = registers_read(cpu_get_registers(cpu), inst->rs1);
+  uxlen_t tval;
+  if (load_trigger_hit(cpu, size, rs1_addr, NULL, &tval)) {
+    return trap(cpu, TRAP_BREAKPOINT, tval, next_pc);
+  }
   if (rs1_addr % size != 0)
     return trap(cpu, TRAP_LOAD_ADDRESS_MISALIGNED, rs1_addr, next_pc);
   uint64_t value;
   if (bus_read(cpu_get_bus(cpu), rs1_addr, size, &value) != BUS_OK)
     return trap(cpu, TRAP_LOAD_ACCESS_FAULT, rs1_addr, next_pc);
+
+  uxlen_t data = (uxlen_t)value;
+  if (load_trigger_hit(cpu, size, rs1_addr, &data, &tval)) {
+    return trap(cpu, TRAP_BREAKPOINT, tval, next_pc);
+  }
   if (size == AMO_SIZE_W)
     value = (int32_t)value;
   cpu_set_amo_reservation(cpu, rs1_addr);
@@ -458,7 +509,17 @@ static int amo_sc(Cpu *cpu, const struct Instruction *inst, uint8_t size,
     cpu_set_amo_reservation(cpu, 0);
     return EXECUTE_OK;
   }
+  uxlen_t tval;
+  if (store_trigger_hit(cpu, size, rs1_addr, NULL, &tval)) {
+    return trap(cpu, TRAP_BREAKPOINT, tval, next_pc);
+  }
   uxlen_t rs2_val = registers_read(cpu_get_registers(cpu), inst->rs2);
+
+  uxlen_t data = truncate_to_size(rs2_val, size);
+  if (store_trigger_hit(cpu, size, rs1_addr, &data, &tval)) {
+    return trap(cpu, TRAP_BREAKPOINT, tval, next_pc);
+  }
+
   if (bus_write(cpu_get_bus(cpu), rs1_addr, size, rs2_val) != BUS_OK)
     return trap(cpu, TRAP_STORE_ACCESS_FAULT, rs1_addr, next_pc);
 
@@ -471,31 +532,22 @@ static int64_t alu_amo(uxlen_t funct5, int64_t rs1_val, int64_t rs2_val) {
   switch (funct5) {
   case FUNCT5_AMO_ADD:
     return rs1_val + rs2_val;
-    break;
   case FUNCT5_AMO_SWAP:
     return rs2_val;
-    break;
   case FUNCT5_AMO_XOR:
     return rs1_val ^ rs2_val;
-    break;
   case FUNCT5_AMO_OR:
     return rs1_val | rs2_val;
-    break;
   case FUNCT5_AMO_AND:
     return rs1_val & rs2_val;
-    break;
   case FUNCT5_AMO_MIN:
     return (rs1_val < rs2_val) ? rs1_val : rs2_val;
-    break;
   case FUNCT5_AMO_MAX:
     return (rs1_val > rs2_val) ? rs1_val : rs2_val;
-    break;
   case FUNCT5_AMO_MINU:
     return ((uint64_t)rs1_val < (uint64_t)rs2_val) ? rs1_val : rs2_val;
-    break;
   case FUNCT5_AMO_MAXU:
     return ((uint64_t)rs1_val > (uint64_t)rs2_val) ? rs1_val : rs2_val;
-    break;
   }
   return 0; // Should not reach here if funct5 is valid
 }
@@ -538,6 +590,8 @@ static int64_t amo_operand(uint64_t value, uint8_t size) {
   return size == AMO_SIZE_W ? (int32_t)value : (int64_t)value;
 }
 
+static inline uxlen_t lower_tval(uxlen_t a, uxlen_t b) { return a < b ? a : b; }
+
 static int execute_amo(Cpu *cpu, const struct Instruction *inst,
                        uxlen_t *next_pc) {
   uint8_t size;
@@ -554,6 +608,14 @@ static int execute_amo(Cpu *cpu, const struct Instruction *inst,
 
   Registers *regs = cpu_get_registers(cpu);
   uxlen_t addr = registers_read(regs, inst->rs1);
+  // Evaluate both so every matching trigger gets its hit bit
+  uxlen_t load_tval = (uxlen_t)-1;
+  uxlen_t store_tval = (uxlen_t)-1;
+  bool load = load_trigger_hit(cpu, size, addr, NULL, &load_tval);
+  bool store = store_trigger_hit(cpu, size, addr, NULL, &store_tval);
+  if (load || store)
+    return trap(cpu, TRAP_BREAKPOINT, lower_tval(load_tval, store_tval),
+                next_pc);
   if (addr % size != 0)
     return trap(cpu, TRAP_STORE_ADDRESS_MISALIGNED, addr, next_pc);
 
@@ -563,11 +625,20 @@ static int execute_amo(Cpu *cpu, const struct Instruction *inst,
   if (bus_read(bus, addr, size, &loaded) != BUS_OK)
     return trap(cpu, TRAP_STORE_ACCESS_FAULT, addr, next_pc);
 
+  uxlen_t tval;
+  uxlen_t data = (uxlen_t)loaded;
+  if (load_trigger_hit(cpu, size, addr, &data, &tval))
+    return trap(cpu, TRAP_BREAKPOINT, tval, next_pc);
+
   int64_t old = amo_operand(loaded, size);
   int64_t operand = amo_operand(registers_read(regs, inst->rs2), size);
   int64_t result;
 
   result = alu_amo(funct5, old, operand);
+
+  data = truncate_to_size(result, size);
+  if (store_trigger_hit(cpu, size, addr, &data, &tval))
+    return trap(cpu, TRAP_BREAKPOINT, tval, next_pc);
 
   if (bus_write(bus, addr, size, (uint64_t)result) != BUS_OK)
     return trap(cpu, TRAP_STORE_ACCESS_FAULT, addr, next_pc);

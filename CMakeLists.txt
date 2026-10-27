@@ -105,7 +105,7 @@ if(BUILD_TESTING AND RISCV_TESTS AND RISCV_GCC)
   set(RISCV_MI_TESTS
       ld-misaligned lh-misaligned lw-misaligned sd-misaligned sh-misaligned
       sw-misaligned ma_addr mcsr sbreak scall shamt zicntr instret_overflow
-      csr)
+      csr ma_fetch breakpoint)
   set(RISCV_SI_TESTS csr ma_fetch sbreak scall)
   foreach(suite IN LISTS RISCV_TEST_SUITES)
     file(GLOB RISCV_TEST_SOURCES ${riscv_tests_SOURCE_DIR}/isa/rv${XLEN}${suite}/*.S)
