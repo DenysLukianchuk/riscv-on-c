@@ -1,6 +1,21 @@
 #ifndef RISCV_TRAP_CAUSE_H
 #define RISCV_TRAP_CAUSE_H
 
+#include "riscv/xlen.h"
+
+// mcause/scause: the top bit marks an interrupt, the rest is the code.
+#define TRAP_INTERRUPT ((uxlen_t)1 << (XLEN - 1))
+#define TRAP_CODE(cause) ((cause) & ~TRAP_INTERRUPT)
+
+enum Interrupt {
+  INTERRUPT_S_SOFTWARE = 1,
+  INTERRUPT_M_SOFTWARE = 3,
+  INTERRUPT_S_TIMER = 5,
+  INTERRUPT_M_TIMER = 7,
+  INTERRUPT_S_EXTERNAL = 9,
+  INTERRUPT_M_EXTERNAL = 11,
+};
+
 enum Trap {
   TRAP_INSTRUCTION_ADDRESS_MISALIGNED = 0,
   TRAP_INSTRUCTION_ACCESS_FAULT = 1,
@@ -17,5 +32,8 @@ enum Trap {
   TRAP_LOAD_PAGE_FAULT = 13,
   TRAP_STORE_PAGE_FAULT = 15,
 };
+
+// Bit of an interrupt in mip and mie.
+#define INTERRUPT_BIT(code) ((uxlen_t)1 << (code))
 
 #endif // RISCV_TRAP_CAUSE_H

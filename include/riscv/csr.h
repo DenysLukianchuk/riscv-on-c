@@ -9,6 +9,7 @@ enum CsrRegister {
   CSR_REG_MSTATUS = 0x300,
   CSR_REG_SSTATUS = 0x100,
   CSR_REG_MIE = 0x304,
+  CSR_REG_SIE = 0x104,
   CSR_REG_MTVEC = 0x305,
   CSR_REG_STVEC = 0x105,
   CSR_REG_MSCRATCH = 0x340,
@@ -42,6 +43,8 @@ enum CsrRegister {
   CSR_REG_SCOUNTEREN = 0x106,
   CSR_REG_MEDELEG = 0x302,
   CSR_REG_MIDELEG = 0x303,
+  CSR_REG_MIP = 0x344,
+  CSR_REG_SIP = 0x144,
 };
 
 enum CsrResult { CSR_OK, CSR_ILLEGAL };
@@ -101,5 +104,7 @@ bool csr_breakpoint_on_exception(Csr *csr, enum Privilege handler,
 bool csr_breakpoints_enabled(Csr *csr, enum Privilege privilege);
 bool csr_breakpoint_on_icount(Csr *csr, enum Privilege privilege);
 void csr_count_icount(Csr *csr, enum Privilege privilege);
+void csr_set_interrupt_pending(Csr *csr, uxlen_t interrupts, bool pending);
+bool csr_pending_interrupt(Csr *csr, enum Privilege privilege, unsigned *code);
 
 #endif // RISCV_CSR_H

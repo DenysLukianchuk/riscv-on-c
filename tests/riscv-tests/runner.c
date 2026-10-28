@@ -135,7 +135,8 @@ int main(int argc, char **argv) {
   }
 
   Memory *mem = memory_create(RAM_SIZE);
-  Bus *bus = bus_create(mem);
+  Bus *bus = bus_create();
+  bus_attach(bus, memory_bus_device(mem, RAM_BASE));
   Cpu *cpu = cpu_create(bus);
 
   int status = EXIT_FAILURE;

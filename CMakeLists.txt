@@ -34,8 +34,8 @@ if(SANITIZE)
   endif()
 endif()
 
-# Emulator core: everything in src/ except the entry point.
-file(GLOB CORE_SOURCES CONFIGURE_DEPENDS src/*.c)
+# Emulator core: everything under src/ except the entry point.
+file(GLOB_RECURSE CORE_SOURCES CONFIGURE_DEPENDS src/*.c)
 list(REMOVE_ITEM CORE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/main.c)
 
 add_library(riscv_core STATIC ${CORE_SOURCES})

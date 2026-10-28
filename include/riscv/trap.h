@@ -13,5 +13,6 @@
 
 uxlen_t cpu_raise_exception(Cpu *cpu, uxlen_t cause, uxlen_t tval);
 uxlen_t cpu_return_from_trap(Cpu *cpu, enum Privilege xret);
+uxlen_t cpu_raise_interrupt(Cpu *cpu, unsigned code);
 
 #endif // RISCV_TRAP_H

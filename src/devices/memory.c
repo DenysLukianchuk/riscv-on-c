@@ -42,3 +42,24 @@ void memory_destroy(Memory *mem) {
   free(mem->data);
   free(mem);
 }
+
+// The bus only passes accesses that lie wholly inside the memory.
+static enum BusStatus bus_read(void *mem, uxlen_t offset, unsigned size,
+                               uint64_t *value) {
+  *value = memory_read(mem, offset, size);
+  return BUS_OK;
+}
+
+static enum BusStatus bus_write(void *mem, uxlen_t offset, unsigned size,
+                                uint64_t value) {
+  memory_write(mem, offset, size, value);
+  return BUS_OK;
+}
+
+struct BusDevice memory_bus_device(Memory *mem, uxlen_t base) {
+  return (struct BusDevice){.base = base,
+                            .size = mem->size,
+                            .device = mem,
+                            .read = bus_read,
+                            .write = bus_write};
+}

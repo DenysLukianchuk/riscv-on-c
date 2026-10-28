@@ -9,12 +9,14 @@
 
 // CSR addresses.
 #define SSTATUS 0x100
+#define SIE 0x104
 #define STVEC 0x105
 #define SCOUNTEREN 0x106
 #define SSCRATCH 0x140
 #define SEPC 0x141
 #define SCAUSE 0x142
 #define STVAL 0x143
+#define SIP 0x144
 #define MSTATUS 0x300
 #define MISA 0x301
 #define MEDELEG 0x302
@@ -26,6 +28,7 @@
 #define MEPC 0x341
 #define MCAUSE 0x342
 #define MTVAL 0x343
+#define MIP 0x344
 #define MCYCLE 0xB00
 #define MINSTRET 0xB02
 #define MCYCLEH 0xB80
@@ -183,5 +186,21 @@
 #define CAUSE_ECALL_FROM_U 8
 #define CAUSE_ECALL_FROM_S 9
 #define CAUSE_ECALL_FROM_M 11
+
+// Interrupts in mcause and scause: the top bit set, the code below it.
+#define CAUSE_INTERRUPT ((uxlen_t)1 << (XLEN - 1))
+#define IRQ_S_SOFTWARE 1
+#define IRQ_M_SOFTWARE 3
+#define IRQ_S_TIMER 5
+#define IRQ_M_TIMER 7
+#define IRQ_S_EXTERNAL 9
+#define IRQ_M_EXTERNAL 11
+
+// CLINT (SiFive CLINT / RISC-V ACLINT): register offsets inside the device,
+// for hart 0.
+#define CLINT_MSIP 0x0000
+#define CLINT_MTIMECMP 0x4000
+#define CLINT_MTIME 0xBFF8
+#define CLINT_SIZE 0x10000
 
 #endif // TESTS_RISCV_SPEC_H

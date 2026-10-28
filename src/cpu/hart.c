@@ -7,8 +7,16 @@
 static void step_instruction(Cpu *cpu) {
   uxlen_t pc = cpu_get_pc(cpu);
   Csr *csr = cpu_get_csr(cpu);
+  enum Privilege privilege = cpu_get_privilege(cpu);
   uxlen_t tval;
-  if (csr_breakpoint_on_execute(csr, cpu_get_privilege(cpu), pc, NULL, &tval)) {
+
+  unsigned code;
+  if (csr_pending_interrupt(csr, privilege, &code)) {
+    cpu_set_pc(cpu, cpu_raise_interrupt(cpu, code));
+    return;
+  }
+
+  if (csr_breakpoint_on_execute(csr, privilege, pc, NULL, &tval)) {
     cpu_set_pc(cpu, cpu_raise_exception(cpu, TRAP_BREAKPOINT, tval));
     return;
   }
@@ -21,8 +29,7 @@ static void step_instruction(Cpu *cpu) {
     return;
   }
   uxlen_t data = (uxlen_t)instruction;
-  if (csr_breakpoint_on_execute(csr, cpu_get_privilege(cpu), pc, &data,
-                                &tval)) {
+  if (csr_breakpoint_on_execute(csr, privilege, pc, &data, &tval)) {
     cpu_set_pc(cpu, cpu_raise_exception(cpu, TRAP_BREAKPOINT, tval));
     return;
   }

@@ -12,7 +12,8 @@ static Bus *bus;
 
 void setUp(void) {
   mem = memory_create(TEST_RAM_SIZE);
-  bus = bus_create(mem);
+  bus = bus_create();
+  bus_attach(bus, memory_bus_device(mem, RAM_BASE));
 }
 
 void tearDown(void) {

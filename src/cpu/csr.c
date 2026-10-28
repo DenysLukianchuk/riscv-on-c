@@ -11,13 +11,14 @@ struct ModeRegs {
   uint32_t counteren;
 };
 
-#define SSIP (1u << 1)
-#define MSIP (1u << 3)
-#define STIP (1u << 5)
-#define MTIP (1u << 7)
-#define SEIP (1u << 9)
-#define MEIP (1u << 11)
+#define SSIP INTERRUPT_BIT(INTERRUPT_S_SOFTWARE)
+#define MSIP INTERRUPT_BIT(INTERRUPT_M_SOFTWARE)
+#define STIP INTERRUPT_BIT(INTERRUPT_S_TIMER)
+#define MTIP INTERRUPT_BIT(INTERRUPT_M_TIMER)
+#define SEIP INTERRUPT_BIT(INTERRUPT_S_EXTERNAL)
+#define MEIP INTERRUPT_BIT(INTERRUPT_M_EXTERNAL)
 #define MIDELEG_WRITABLE (SSIP | STIP | SEIP)
+#define MIP_WRITABLE (SSIP | STIP | SEIP)
 #define MIE_WRITABLE (SSIP | MSIP | STIP | MTIP | SEIP | MEIP)
 
 #define MSTATUS_WRITABLE                                                       \
@@ -59,6 +60,7 @@ struct Csr {
   uint64_t mcycle;
   uxlen_t medeleg;
   uxlen_t mideleg;
+  uxlen_t mip;
   bool minstret_written;
 };
 
@@ -91,6 +93,7 @@ Csr *csr_create(void) {
   csr->minstret_written = false;
   csr->medeleg = 0;
   csr->mideleg = 0;
+  csr->mip = 0;
   trigger_regs_init(&csr->trigger);
   return csr;
 }
@@ -179,6 +182,9 @@ enum CsrResult csr_read(Csr *csr, uint16_t addr, enum Privilege privilege,
   case CSR_REG_MIE:
     *value = csr->mie;
     return CSR_OK;
+  case CSR_REG_SIE:
+    *value = csr->mie & csr->mideleg;
+    return CSR_OK;
   case CSR_REG_MISA:
     *value = csr->misa;
     return CSR_OK;
@@ -221,6 +227,12 @@ enum CsrResult csr_read(Csr *csr, uint16_t addr, enum Privilege privilege,
   case CSR_REG_MIDELEG:
     *value = csr->mideleg;
     return CSR_OK;
+  case CSR_REG_MIP:
+    *value = csr->mip;
+    return CSR_OK;
+  case CSR_REG_SIP:
+    *value = csr->mip & csr->mideleg;
+    return CSR_OK;
   default:
     return CSR_ILLEGAL;
   }
@@ -252,21 +264,18 @@ static uxlen_t legalize_tvec(uxlen_t old_value, uxlen_t value) {
   return clear_bits(value, 1, 0) | mode;
 }
 
+static inline uxlen_t masked_write(uxlen_t old, uxlen_t new, uxlen_t mask) {
+  return (old & ~mask) | (new & mask);
+}
+
 static uxlen_t legalize_status(uxlen_t old_value, uxlen_t value,
                                uint16_t addr) {
-#if XLEN == 64
-  value &= ~(MSTATUS_UXL_MASK | MSTATUS_SXL_MASK);
-  value |= (old_value & (MSTATUS_UXL_MASK | MSTATUS_SXL_MASK));
-#endif
-  uxlen_t result;
-  if (addr == CSR_REG_MSTATUS) {
-    result = (old_value & ~MSTATUS_WRITABLE) | (value & MSTATUS_WRITABLE);
-    if ((result & MSTATUS_MPP_MASK) == MSTATUS_MPP_RESERVED)
-      result &= ~MSTATUS_MPP_MASK;
-  } else
-    result = (old_value & ~SSTATUS_MASK) | (value & SSTATUS_MASK);
-
-  return result;
+  if (addr != CSR_REG_MSTATUS)
+    return masked_write(old_value, value, SSTATUS_MASK);
+  uxlen_t status = masked_write(old_value, value, MSTATUS_WRITABLE);
+  if ((status & MSTATUS_MPP_MASK) == MSTATUS_MPP_RESERVED)
+    status &= ~MSTATUS_MPP_MASK;
+  return status;
 }
 
 enum CsrResult csr_write(Csr *csr, uint16_t addr, enum Privilege privilege,
@@ -305,7 +314,10 @@ enum CsrResult csr_write(Csr *csr, uint16_t addr, enum Privilege privilege,
     csr->mstatus = legalize_status(csr->mstatus, value, addr);
     return CSR_OK;
   case CSR_REG_MIE:
-    csr->mie = value & MIE_WRITABLE;
+    csr->mie = masked_write(csr->mie, value, MIE_WRITABLE);
+    return CSR_OK;
+  case CSR_REG_SIE:
+    csr->mie = masked_write(csr->mie, value, csr->mideleg);
     return CSR_OK;
   case CSR_REG_MCYCLE:
     write_low_half(&csr->mcycle, value);
@@ -335,6 +347,12 @@ enum CsrResult csr_write(Csr *csr, uint16_t addr, enum Privilege privilege,
     return CSR_OK;
   case CSR_REG_MISA:
     // misa is WARL; this hart cannot turn extensions off.
+    return CSR_OK;
+  case CSR_REG_MIP:
+    csr->mip = masked_write(csr->mip, value, MIP_WRITABLE);
+    return CSR_OK;
+  case CSR_REG_SIP:
+    csr->mip = masked_write(csr->mip, value, csr->mideleg & SSIP);
     return CSR_OK;
   default:
     return CSR_ILLEGAL;
@@ -409,4 +427,43 @@ bool csr_breakpoint_on_icount(Csr *csr, enum Privilege privilege) {
 
 void csr_count_icount(Csr *csr, enum Privilege privilege) {
   trigger_icount_count(&csr->trigger, privilege);
+}
+
+void csr_set_interrupt_pending(Csr *csr, uxlen_t interrupts, bool pending) {
+  if (pending)
+    csr->mip |= interrupts;
+  else
+    csr->mip &= ~interrupts;
+}
+
+// Highest priority first.
+static const enum Interrupt INTERRUPT_PRIORITY[] = {
+    INTERRUPT_M_EXTERNAL, INTERRUPT_M_SOFTWARE, INTERRUPT_M_TIMER,
+    INTERRUPT_S_EXTERNAL, INTERRUPT_S_SOFTWARE, INTERRUPT_S_TIMER};
+
+bool csr_pending_interrupt(Csr *csr, enum Privilege privilege, unsigned *code) {
+  uxlen_t pending = csr->mip & csr->mie;
+  uxlen_t to_m = pending & ~csr->mideleg;
+  uxlen_t to_s = pending & csr->mideleg;
+
+  // A mode can mask the interrupts that target it, never those of a higher
+  // mode; M-mode never takes the ones delegated to S.
+  bool m_enabled = privilege < PRIV_M || (csr->mstatus & MSTATUS_MIE_BIT);
+  bool s_enabled = privilege < PRIV_S ||
+                   (privilege == PRIV_S && (csr->mstatus & SSTATUS_SIE_BIT));
+  if (!m_enabled)
+    to_m = 0;
+  if (!s_enabled)
+    to_s = 0;
+
+  // Interrupts for M-mode are taken before those for S-mode.
+  uxlen_t ready = to_m ? to_m : to_s;
+  for (unsigned i = 0;
+       i < sizeof INTERRUPT_PRIORITY / sizeof INTERRUPT_PRIORITY[0]; i++) {
+    if (ready & INTERRUPT_BIT(INTERRUPT_PRIORITY[i])) {
+      *code = INTERRUPT_PRIORITY[i];
+      return true;
+    }
+  }
+  return false;
 }

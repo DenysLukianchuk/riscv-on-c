@@ -8,6 +8,10 @@ struct TrapMode {
   enum Privilege privilege;
 };
 
+#define TVEC_MODE(tvec) bits(tvec, 1, 0)
+#define TVEC_VECTORED 1
+#define TVEC_ENTRY_SIZE 4
+
 static const struct TrapMode MODE_M = {
     CSR_REG_MEPC,     CSR_REG_MCAUSE,    CSR_REG_MTVAL,
     CSR_REG_MTVEC,    MSTATUS_MIE_BIT,   MSTATUS_MPIE_BIT,
@@ -45,7 +49,13 @@ static uxlen_t trap_enter(Csr *csr, const struct TrapMode *mode, uxlen_t pc,
            (((uxlen_t)from << mode->pp_shift) & mode->pp_mask);
   csr_set(csr, CSR_REG_MSTATUS, status);
 
-  return clear_bits(csr_get(csr, mode->tvec), 1, 0);
+  uxlen_t tvec = csr_get(csr, mode->tvec);
+  uxlen_t handler = clear_bits(tvec, 1, 0);
+  // In vectored mode each interrupt has its own entry; exceptions use the
+  // base.
+  if (TVEC_MODE(tvec) == TVEC_VECTORED && (cause & TRAP_INTERRUPT))
+    handler += TVEC_ENTRY_SIZE * TRAP_CODE(cause);
+  return handler;
 }
 
 static uxlen_t trap_leave(Csr *csr, const struct TrapMode *mode,
@@ -60,13 +70,14 @@ static uxlen_t trap_leave(Csr *csr, const struct TrapMode *mode,
   return csr_get(csr, mode->epc);
 }
 
-static uxlen_t take_trap(Cpu *cpu, uxlen_t cause, uxlen_t tval, uxlen_t epc) {
+static uxlen_t take_trap(Cpu *cpu, uxlen_t cause, uxlen_t tval, uxlen_t epc,
+                         uint16_t deleg_csr) {
   enum Privilege from = cpu_get_privilege(cpu);
   Csr *csr = cpu_get_csr(cpu);
-  uxlen_t medeleg;
-  csr_read(csr, CSR_REG_MEDELEG, PRIV_M, &medeleg);
+  uxlen_t delegated;
+  csr_read(csr, deleg_csr, PRIV_M, &delegated);
   const struct TrapMode *target_mode;
-  if (from <= PRIV_S && (medeleg & ((uxlen_t)1 << cause)))
+  if (from <= PRIV_S && (delegated & ((uxlen_t)1 << TRAP_CODE(cause))))
     target_mode = &MODE_S;
   else
     target_mode = &MODE_M;
@@ -77,12 +88,13 @@ static uxlen_t take_trap(Cpu *cpu, uxlen_t cause, uxlen_t tval, uxlen_t epc) {
 
 uxlen_t cpu_raise_exception(Cpu *cpu, uxlen_t cause, uxlen_t tval) {
   enum Privilege from = cpu_get_privilege(cpu);
-  uxlen_t handler = take_trap(cpu, cause, tval, cpu_get_pc(cpu));
+  uxlen_t handler =
+      take_trap(cpu, cause, tval, cpu_get_pc(cpu), CSR_REG_MEDELEG);
   // An etrigger fires right after the trap, before the handler's first
   // instruction.
   if (csr_breakpoint_on_exception(cpu_get_csr(cpu), cpu_get_privilege(cpu),
                                   from, cause))
-    handler = take_trap(cpu, TRAP_BREAKPOINT, 0, handler);
+    handler = take_trap(cpu, TRAP_BREAKPOINT, 0, handler, CSR_REG_MEDELEG);
   return handler;
 }
 
@@ -92,4 +104,9 @@ uxlen_t cpu_return_from_trap(Cpu *cpu, enum Privilege xret) {
   uxlen_t pc = trap_leave(cpu_get_csr(cpu), mode, &to);
   cpu_set_privilege(cpu, to);
   return pc;
+}
+
+uxlen_t cpu_raise_interrupt(Cpu *cpu, unsigned code) {
+  return take_trap(cpu, TRAP_INTERRUPT | code, 0, cpu_get_pc(cpu),
+                   CSR_REG_MIDELEG);
 }
