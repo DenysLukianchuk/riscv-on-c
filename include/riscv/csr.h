@@ -89,6 +89,9 @@ enum CsrResult csr_read(Csr *csr, uint16_t addr, enum Privilege privilege,
                         uxlen_t *value);
 enum CsrResult csr_write(Csr *csr, uint16_t addr, enum Privilege privilege,
                          uxlen_t value);
+enum CsrResult csr_modify(Csr *csr, uint16_t addr, enum Privilege privilege,
+                          uxlen_t value, uxlen_t mask, bool write,
+                          uxlen_t *old);
 void csr_destroy(Csr *csr);
 
 void csr_begin_instruction(Csr *csr);
@@ -105,6 +108,7 @@ bool csr_breakpoints_enabled(Csr *csr, enum Privilege privilege);
 bool csr_breakpoint_on_icount(Csr *csr, enum Privilege privilege);
 void csr_count_icount(Csr *csr, enum Privilege privilege);
 void csr_set_interrupt_pending(Csr *csr, uxlen_t interrupts, bool pending);
+void csr_set_seip_line(Csr *csr, bool raised);
 bool csr_pending_interrupt(Csr *csr, enum Privilege privilege, unsigned *code);
 
 #endif // RISCV_CSR_H

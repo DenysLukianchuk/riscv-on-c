@@ -18,4 +18,7 @@ void machine_step(Machine *machine);
 
 void machine_console_input(Machine *machine, uint8_t byte);
 
+bool machine_finished(Machine *machine);
+int machine_exit_code(Machine *machine);
+
 #endif // RISCV_MACHINE_H

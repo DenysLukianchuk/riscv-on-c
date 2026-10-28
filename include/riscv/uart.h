@@ -3,6 +3,7 @@
 
 #include "riscv/device.h"
 #include "riscv/xlen.h"
+#include <stdbool.h>
 
 typedef struct Uart Uart;
 typedef void (*UartOutputFn)(void *context, uint8_t byte);
@@ -14,6 +15,7 @@ enum BusStatus uart_read(Uart *uart, uxlen_t offset, unsigned size,
 enum BusStatus uart_write(Uart *uart, uxlen_t offset, unsigned size,
                           uint64_t value);
 void uart_receive(Uart *uart, uint8_t byte);
+bool uart_interrupt_pending(const Uart *uart);
 struct BusDevice uart_bus_device(Uart *uart, uxlen_t base);
 
 #endif // RISCV_UART_H

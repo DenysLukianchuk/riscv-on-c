@@ -22,13 +22,17 @@ enum UartRegister {
 #define LSR_THRE 0x20
 #define LSR_TEMT 0x40
 #define LCR_DLAB 0x80
+#define IER_RX_DATA 0x01
+#define IER_THR_EMPTY 0x02
+#define IIR_NO_INTERRUPT 0x01
+#define IIR_THR_EMPTY 0x02
+#define IIR_RX_DATA 0x04
 
 #define IER_WRITABLE 0x0F
 #define MCR_WRITABLE 0x1F
 
 #define RX_FIFO_DEPTH 16
 
-// The register window QEMU's virt board gives the UART.
 #define UART_SIZE 0x100
 
 struct Uart {
@@ -37,6 +41,7 @@ struct Uart {
   void *context;
   uint8_t rx_storage[RX_FIFO_DEPTH];
   struct Fifo rx;
+  bool thr_empty_event;
 };
 
 Uart *uart_create(UartOutputFn output, void *context) {
@@ -57,6 +62,14 @@ static uint8_t line_status(const Uart *uart) {
   return status;
 }
 
+static uint8_t interrupt_id(const Uart *uart) {
+  if ((uart->ier & IER_RX_DATA) && !fifo_empty(&uart->rx))
+    return IIR_RX_DATA;
+  if ((uart->ier & IER_THR_EMPTY) && uart->thr_empty_event)
+    return IIR_THR_EMPTY;
+  return IIR_NO_INTERRUPT;
+}
+
 enum BusStatus uart_read(Uart *uart, uxlen_t offset, unsigned size,
                          uint64_t *value) {
   if (size != 1)
@@ -74,7 +87,9 @@ enum BusStatus uart_read(Uart *uart, uxlen_t offset, unsigned size,
     *value = dlab(uart) ? uart->dlm : uart->ier;
     break;
   case IIR:
-    *value = 0x01;
+    *value = interrupt_id(uart);
+    if (*value == IIR_THR_EMPTY)
+      uart->thr_empty_event = false;
     break;
   case LCR:
     *value = uart->lcr;
@@ -100,19 +115,24 @@ enum BusStatus uart_write(Uart *uart, uxlen_t offset, unsigned size,
     return BUS_ACCESS_FAULT;
   switch (offset) {
   case THR:
-    if (dlab(uart))
+    if (dlab(uart)) {
       uart->dll = value;
-    else if (uart->output)
+      break;
+    }
+    if (uart->output)
       uart->output(uart->context, value);
+    uart->thr_empty_event = true;
     break;
   case LCR:
     uart->lcr = value;
     break;
   case IER:
-    if (dlab(uart))
+    if (dlab(uart)) {
       uart->dlm = value;
-    else
-      uart->ier = value & IER_WRITABLE;
+      break;
+    }
+    uart->ier = value & IER_WRITABLE;
+    uart->thr_empty_event = true;
     break;
   case MCR:
     uart->mcr = value & MCR_WRITABLE;
@@ -122,6 +142,10 @@ enum BusStatus uart_write(Uart *uart, uxlen_t offset, unsigned size,
     break;
   }
   return BUS_OK;
+}
+
+bool uart_interrupt_pending(const Uart *uart) {
+  return interrupt_id(uart) != IIR_NO_INTERRUPT;
 }
 
 // A byte that arrives while the receive fifo is full is lost, as on the chip.

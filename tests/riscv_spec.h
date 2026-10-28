@@ -203,4 +203,12 @@
 #define CLINT_MTIME 0xBFF8
 #define CLINT_SIZE 0x10000
 
+// PLIC (RISC-V Platform-Level Interrupt Controller): register offsets inside
+// the device. A context is one hart in one mode.
+#define PLIC_PRIORITY(source) (4 * (source))
+#define PLIC_PENDING 0x1000
+#define PLIC_ENABLE(context) (0x2000 + 0x80 * (context))
+#define PLIC_THRESHOLD(context) (0x200000 + 0x1000 * (context))
+#define PLIC_CLAIM(context) (PLIC_THRESHOLD(context) + 4)
+
 #endif // TESTS_RISCV_SPEC_H

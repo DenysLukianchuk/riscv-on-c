@@ -20,6 +20,10 @@
 #define LSR_THRE 0x20 // transmit holding register empty
 #define LSR_TEMT 0x40 // transmitter empty
 #define IIR_NO_INTERRUPT 0x01
+#define IIR_RX_DATA 0x04   // received data available
+#define IIR_THR_EMPTY 0x02 // transmit holding register empty
+#define IER_RX_DATA 0x01   // ERBFI
+#define IER_THR_EMPTY 0x02 // ETBEI
 
 static Uart *uart;
 static char sent[64];
@@ -201,7 +205,7 @@ static void test_scratch_register_holds_a_byte(void) {
   TEST_ASSERT_EQUAL_HEX8(0x5A, read_reg(SCR));
 }
 
-// No interrupts until the UART is wired to the PLIC.
+// With IER clear the UART raises no interrupt.
 static void test_iir_reports_no_interrupt(void) {
   write_reg(FCR, 0x07);
 
@@ -219,6 +223,101 @@ static void test_lsr_ignores_writes(void) {
   write_reg(LSR, 0x00);
 
   TEST_ASSERT_BITS(LSR_THRE | LSR_TEMT, LSR_THRE | LSR_TEMT, read_reg(LSR));
+}
+
+// Interrupts: IER picks the events that raise the line; IIR names the most
+// important one pending.
+
+static void test_no_interrupt_after_reset(void) {
+  TEST_ASSERT_FALSE(uart_interrupt_pending(uart));
+}
+
+static void test_received_byte_does_not_interrupt_unless_enabled(void) {
+  uart_receive(uart, 'a');
+
+  TEST_ASSERT_FALSE(uart_interrupt_pending(uart));
+  TEST_ASSERT_EQUAL_HEX8(IIR_NO_INTERRUPT, read_reg(IIR));
+}
+
+static void test_received_byte_interrupts_when_enabled(void) {
+  write_reg(IER, IER_RX_DATA);
+
+  uart_receive(uart, 'a');
+
+  TEST_ASSERT_TRUE(uart_interrupt_pending(uart));
+  TEST_ASSERT_EQUAL_HEX8(IIR_RX_DATA, read_reg(IIR));
+}
+
+static void test_receive_interrupt_lasts_until_the_last_byte_is_read(void) {
+  write_reg(IER, IER_RX_DATA);
+  uart_receive(uart, 'a');
+  uart_receive(uart, 'b');
+
+  read_reg(RBR);
+  TEST_ASSERT_TRUE(uart_interrupt_pending(uart));
+
+  read_reg(RBR);
+  TEST_ASSERT_FALSE(uart_interrupt_pending(uart));
+}
+
+// The transmitter is always empty, so enabling its interrupt fires at once.
+static void test_enabling_the_transmit_interrupt_fires_it(void) {
+  write_reg(IER, IER_THR_EMPTY);
+
+  TEST_ASSERT_TRUE(uart_interrupt_pending(uart));
+  TEST_ASSERT_EQUAL_HEX8(IIR_THR_EMPTY, read_reg(IIR));
+}
+
+// The transmit interrupt is an event, not a level: reading IIR while it is
+// reported acknowledges it.
+static void test_reading_iir_acknowledges_the_transmit_interrupt(void) {
+  write_reg(IER, IER_THR_EMPTY);
+
+  read_reg(IIR);
+
+  TEST_ASSERT_FALSE(uart_interrupt_pending(uart));
+  TEST_ASSERT_EQUAL_HEX8(IIR_NO_INTERRUPT, read_reg(IIR));
+}
+
+static void test_sending_a_byte_fires_the_transmit_interrupt_again(void) {
+  write_reg(IER, IER_THR_EMPTY);
+  read_reg(IIR);
+
+  write_reg(THR, 'A');
+
+  TEST_ASSERT_TRUE(uart_interrupt_pending(uart));
+}
+
+static void test_disabling_the_transmit_interrupt_drops_it(void) {
+  write_reg(IER, IER_THR_EMPTY);
+
+  write_reg(IER, 0);
+
+  TEST_ASSERT_FALSE(uart_interrupt_pending(uart));
+}
+
+static void
+test_writing_the_divisor_does_not_fire_the_transmit_interrupt(void) {
+  write_reg(IER, IER_THR_EMPTY);
+  read_reg(IIR);
+
+  write_reg(LCR, LCR_DLAB);
+  write_reg(DLM, 0);
+  write_reg(LCR, LCR_8N1);
+
+  TEST_ASSERT_FALSE(uart_interrupt_pending(uart));
+}
+
+// Received data outranks the transmitter, and reading IIR while it reports
+// received data does not acknowledge the transmit interrupt behind it.
+static void test_received_data_is_reported_before_the_transmitter(void) {
+  write_reg(IER, IER_RX_DATA | IER_THR_EMPTY);
+  uart_receive(uart, 'a');
+
+  TEST_ASSERT_EQUAL_HEX8(IIR_RX_DATA, read_reg(IIR));
+  read_reg(RBR);
+
+  TEST_ASSERT_EQUAL_HEX8(IIR_THR_EMPTY, read_reg(IIR));
 }
 
 // The registers are bytes, and only eight of them exist.
@@ -262,6 +361,16 @@ int main(void) {
   RUN_TEST(test_iir_reports_no_interrupt);
   RUN_TEST(test_writing_fcr_does_not_change_iir);
   RUN_TEST(test_lsr_ignores_writes);
+  RUN_TEST(test_no_interrupt_after_reset);
+  RUN_TEST(test_received_byte_does_not_interrupt_unless_enabled);
+  RUN_TEST(test_received_byte_interrupts_when_enabled);
+  RUN_TEST(test_receive_interrupt_lasts_until_the_last_byte_is_read);
+  RUN_TEST(test_enabling_the_transmit_interrupt_fires_it);
+  RUN_TEST(test_reading_iir_acknowledges_the_transmit_interrupt);
+  RUN_TEST(test_sending_a_byte_fires_the_transmit_interrupt_again);
+  RUN_TEST(test_disabling_the_transmit_interrupt_drops_it);
+  RUN_TEST(test_writing_the_divisor_does_not_fire_the_transmit_interrupt);
+  RUN_TEST(test_received_data_is_reported_before_the_transmitter);
   RUN_TEST(test_only_byte_accesses_reach_the_registers);
   RUN_TEST(test_offsets_past_the_registers_are_access_faults);
   return UNITY_END();

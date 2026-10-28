@@ -421,46 +421,46 @@ static int execute_system(Cpu *cpu, const struct Instruction *inst,
   uint32_t csr_addr = (uint32_t)(inst->imm & 0xFFF);
   Csr *csr = cpu_get_csr(cpu);
   Registers *regs = cpu_get_registers(cpu);
-  uxlen_t csr_val = 0;
 
-  if (csr_read(csr, csr_addr, privilege, &csr_val) != CSR_OK) {
-    return illegal_instruction(cpu, inst, next_pc);
-  }
   uxlen_t rs1_val = registers_read(regs, inst->rs1);
-  uxlen_t new_csr_val = csr_val;
-  uint8_t need_write = 1;
+  uxlen_t value, mask;
+  bool write = inst->rs1 != 0;
 
   switch (inst->funct3) {
   case FUNCT3_CSRRW:
-    new_csr_val = rs1_val;
+    value = rs1_val;
+    mask = ~(uxlen_t)0;
+    write = true;
     break;
   case FUNCT3_CSRRS:
-    new_csr_val = csr_val | rs1_val;
-    need_write = (inst->rs1 != 0);
+    value = ~(uxlen_t)0;
+    mask = rs1_val;
     break;
   case FUNCT3_CSRRC:
-    new_csr_val = csr_val & ~rs1_val;
-    need_write = (inst->rs1 != 0);
+    value = 0;
+    mask = rs1_val;
     break;
   case FUNCT3_CSRRWI:
-    new_csr_val = inst->rs1;
+    value = inst->rs1;
+    mask = ~(uxlen_t)0;
+    write = true;
     break;
   case FUNCT3_CSRRSI:
-    new_csr_val = csr_val | inst->rs1;
-    need_write = (inst->rs1 != 0);
+    value = ~(uxlen_t)0;
+    mask = inst->rs1;
     break;
   case FUNCT3_CSRRCI:
-    new_csr_val = csr_val & ~inst->rs1;
-    need_write = (inst->rs1 != 0);
+    value = 0;
+    mask = inst->rs1;
     break;
   default:
     return illegal_instruction(cpu, inst, next_pc);
   }
-  if (need_write &&
-      csr_write(csr, csr_addr, privilege, new_csr_val) != CSR_OK) {
+
+  uxlen_t old;
+  if (csr_modify(csr, csr_addr, privilege, value, mask, write, &old) != CSR_OK)
     return illegal_instruction(cpu, inst, next_pc);
-  }
-  registers_write(regs, inst->rd, csr_val);
+  registers_write(regs, inst->rd, old);
 
   return EXECUTE_OK;
 }

@@ -53,10 +53,11 @@ int main(int argc, char *argv[]) {
   }
 
   cpu_set_pc(machine_get_cpu(machine), entry);
-  for (;;)
+  while (!machine_finished(machine))
     machine_step(machine);
 
+  int exit_code = machine_exit_code(machine);
   machine_destroy(machine);
   free(image);
-  return 0;
+  return exit_code;
 }

@@ -131,6 +131,23 @@ static void test_csrrwi_always_writes_even_zero_immediate(void) {
 
 #define SYSTEM_FUNCT3_4_X1_MSCRATCH_X2 RV_I(MSCRATCH, 2, 4, 1, ASM_SYSTEM)
 
+// mip: an instruction reads SEIP as the software bit ORed with the PLIC's
+// line, and only M-mode may touch it.
+
+static void test_csrr_mip_shows_the_plic_seip_line(void) {
+  csr_set_seip_line(cpu_get_csr(cpu), true);
+
+  execute_raw(CSRR(1, MIP));
+
+  TEST_ASSERT_EQUAL_HEX64(SEIP, get_reg(1) & SEIP);
+}
+
+static void test_mip_is_not_accessible_from_supervisor_mode(void) {
+  cpu_set_privilege(cpu, PRIV_S);
+
+  TEST_ASSERT_ILLEGAL_INSTRUCTION(CSRR(1, MIP));
+}
+
 static void test_system_with_reserved_funct3_raises_illegal_instruction(void) {
   TEST_ASSERT_ILLEGAL_INSTRUCTION(SYSTEM_FUNCT3_4_X1_MSCRATCH_X2);
 }
@@ -153,6 +170,8 @@ int main(void) {
   RUN_TEST(test_csrrci_clears_immediate_bits_in_csr);
   RUN_TEST(test_csrrsi_and_csrrci_with_zero_immediate_do_not_write);
   RUN_TEST(test_csrrwi_always_writes_even_zero_immediate);
+  RUN_TEST(test_csrr_mip_shows_the_plic_seip_line);
+  RUN_TEST(test_mip_is_not_accessible_from_supervisor_mode);
   RUN_TEST(test_system_with_reserved_funct3_raises_illegal_instruction);
   return UNITY_END();
 }

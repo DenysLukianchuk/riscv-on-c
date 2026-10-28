@@ -62,6 +62,7 @@ struct Csr {
   uxlen_t mideleg;
   uxlen_t mip;
   bool minstret_written;
+  bool seip_line;
 };
 
 static void mode_regs_init(struct ModeRegs *regs) {
@@ -94,6 +95,7 @@ Csr *csr_create(void) {
   csr->medeleg = 0;
   csr->mideleg = 0;
   csr->mip = 0;
+  csr->seip_line = false;
   trigger_regs_init(&csr->trigger);
   return csr;
 }
@@ -135,6 +137,13 @@ static inline bool csr_is_accessible(Csr *csr, uint16_t addr,
     return counteren_accessible(csr, COUNTEREN_IR, privilege);
   }
   return true;
+}
+
+static uxlen_t pending_bits(const Csr *csr) {
+  uxlen_t pending = csr->mip;
+  if (csr->seip_line)
+    pending |= SEIP;
+  return pending;
 }
 
 enum CsrResult csr_read(Csr *csr, uint16_t addr, enum Privilege privilege,
@@ -228,14 +237,25 @@ enum CsrResult csr_read(Csr *csr, uint16_t addr, enum Privilege privilege,
     *value = csr->mideleg;
     return CSR_OK;
   case CSR_REG_MIP:
-    *value = csr->mip;
+    *value = pending_bits(csr);
     return CSR_OK;
   case CSR_REG_SIP:
-    *value = csr->mip & csr->mideleg;
+    *value = pending_bits(csr) & csr->mideleg;
     return CSR_OK;
   default:
     return CSR_ILLEGAL;
   }
+}
+
+enum CsrResult csr_modify(Csr *csr, uint16_t addr, enum Privilege privilege,
+                          uxlen_t value, uxlen_t mask, bool write,
+                          uxlen_t *old) {
+  enum CsrResult result = csr_read(csr, addr, privilege, old);
+  if (result != CSR_OK || !write)
+    return result;
+  // Only the software SEIP bit takes part, not the PLIC's line.
+  uxlen_t base = addr == CSR_REG_MIP ? csr->mip : *old;
+  return csr_write(csr, addr, privilege, (base & ~mask) | (value & mask));
 }
 
 static inline bool csr_is_read_only(uint16_t addr) {
@@ -436,13 +456,15 @@ void csr_set_interrupt_pending(Csr *csr, uxlen_t interrupts, bool pending) {
     csr->mip &= ~interrupts;
 }
 
+void csr_set_seip_line(Csr *csr, bool raised) { csr->seip_line = raised; }
+
 // Highest priority first.
 static const enum Interrupt INTERRUPT_PRIORITY[] = {
     INTERRUPT_M_EXTERNAL, INTERRUPT_M_SOFTWARE, INTERRUPT_M_TIMER,
     INTERRUPT_S_EXTERNAL, INTERRUPT_S_SOFTWARE, INTERRUPT_S_TIMER};
 
 bool csr_pending_interrupt(Csr *csr, enum Privilege privilege, unsigned *code) {
-  uxlen_t pending = csr->mip & csr->mie;
+  uxlen_t pending = pending_bits(csr) & csr->mie;
   uxlen_t to_m = pending & ~csr->mideleg;
   uxlen_t to_s = pending & csr->mideleg;
 
