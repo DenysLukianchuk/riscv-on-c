@@ -76,6 +76,11 @@ static void mode_regs_init(struct ModeRegs *regs) {
 
 Csr *csr_create(void) {
   Csr *csr = (Csr *)malloc(sizeof(Csr));
+  csr_reset(csr);
+  return csr;
+}
+
+void csr_reset(Csr *csr) {
   csr->mhartid = 0;
   mode_regs_init(&csr->m);
   mode_regs_init(&csr->s);
@@ -97,7 +102,6 @@ Csr *csr_create(void) {
   csr->mip = 0;
   csr->seip_line = false;
   trigger_regs_init(&csr->trigger);
-  return csr;
 }
 
 static struct ModeRegs *mode_regs(Csr *csr, uint16_t addr) {
@@ -242,6 +246,9 @@ enum CsrResult csr_read(Csr *csr, uint16_t addr, enum Privilege privilege,
   case CSR_REG_SIP:
     *value = pending_bits(csr) & csr->mideleg;
     return CSR_OK;
+  case CSR_REG_SATP:
+    *value = 0; // Bare mode, no translation
+    return CSR_OK;
   default:
     return CSR_ILLEGAL;
   }
@@ -373,6 +380,9 @@ enum CsrResult csr_write(Csr *csr, uint16_t addr, enum Privilege privilege,
     return CSR_OK;
   case CSR_REG_SIP:
     csr->mip = masked_write(csr->mip, value, csr->mideleg & SSIP);
+    return CSR_OK;
+  case CSR_REG_SATP:
+    // ignore for now
     return CSR_OK;
   default:
     return CSR_ILLEGAL;

@@ -26,13 +26,19 @@ shortcuts.
   `0x0c000000`, an NS16550A UART with interrupts at `0x10000000`, and a test
   finisher at `0x00100000` through which the guest powers the board off with
   an exit code
-- ELF loader
+- ELF loader; the board describes itself to the guest in a flattened device
+  tree, and the hart starts by the RISC-V boot protocol: M-mode, hart ID in
+  `a0`, device tree address in `a1`
+- `satp` in Bare mode only, no address translation yet
+
+Boots [OpenSBI](https://github.com/riscv-software-src/opensbi) v1.9: the
+banner, its test payload in S-mode and a clean power-off.
 
 Passes the official [riscv-tests](https://github.com/riscv-software-src/riscv-tests)
 `ui`, `um` and `ua` suites on both XLENs, and 16 of 18 `mi` and 4 of 7 `si`
 tests.
 
-Next: a device tree, to boot OpenSBI; then the MMU and Linux.
+Next: the Sv39 MMU, then Linux.
 
 ## Build and test
 
@@ -42,6 +48,26 @@ when a RISC-V cross compiler (`riscv64-linux-gnu-gcc`) is installed.
 ```sh
 cmake --workflow --preset rv64
 cmake --workflow --preset rv32
+```
+
+## Running OpenSBI
+
+Build OpenSBI for the emulator's ISA, linked at the start of RAM:
+
+```sh
+git clone --branch v1.9 https://github.com/riscv-software-src/opensbi.git
+cd opensbi
+make CROSS_COMPILE=riscv64-linux-gnu- PLATFORM=generic \
+     PLATFORM_RISCV_ISA=rv64ima_zicsr_zifencei PLATFORM_RISCV_ABI=lp64 \
+     FW_TEXT_START=0x80000000
+```
+
+Then run its firmware with the test payload on an emulator built without
+sanitizers:
+
+```sh
+cmake --preset rv64-nosan && cmake --build --preset rv64-nosan
+build/rv64-nosan/riscv path/to/opensbi/build/platform/generic/firmware/fw_payload.elf
 ```
 
 ## License

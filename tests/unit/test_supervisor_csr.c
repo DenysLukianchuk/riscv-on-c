@@ -119,7 +119,41 @@ static void test_machine_csr_is_not_accessible_from_supervisor_mode(void) {
   TEST_ASSERT_EQUAL(CSR_ILLEGAL, csr_write(csrs, MSCRATCH, PRIV_S, 1));
 }
 
+// satp selects the address translation scheme. Only Bare (no translation) is
+// implemented so far.
+static void test_satp_starts_in_bare_mode(void) {
+  write_as(PRIV_S, SATP, 0);
+
+  TEST_ASSERT_EQUAL_HEX64(0, read_as(PRIV_S, SATP));
+  TEST_ASSERT_EQUAL_HEX64(0, read_as(PRIV_M, SATP));
+}
+
+// The read must produce a value, not leave the caller's variable as it was.
+static void test_satp_read_overwrites_the_destination(void) {
+  uxlen_t value = 0xDEAD;
+
+  TEST_ASSERT_EQUAL(CSR_OK, csr_read(csrs, SATP, PRIV_S, &value));
+  TEST_ASSERT_EQUAL_HEX64(0, value);
+}
+
+static void test_satp_is_not_accessible_from_user_mode(void) {
+  uxlen_t value = 0;
+
+  TEST_ASSERT_EQUAL(CSR_ILLEGAL, csr_read(csrs, SATP, PRIV_U, &value));
+  TEST_ASSERT_EQUAL(CSR_ILLEGAL, csr_write(csrs, SATP, PRIV_U, 0));
+}
+
 #if XLEN == 64
+
+// MODE is satp[63:60]; 1 is reserved. A write with an unsupported MODE has
+// no effect at all, PPN included.
+#define SATP_MODE_RESERVED ((uxlen_t)1 << 60)
+
+static void test_satp_ignores_a_write_with_an_unsupported_mode(void) {
+  write_as(PRIV_S, SATP, SATP_MODE_RESERVED | 0x1234);
+
+  TEST_ASSERT_EQUAL_HEX64(0, read_as(PRIV_S, SATP));
+}
 
 static void test_mstatus_reports_64_bit_user_and_supervisor_modes(void) {
   uxlen_t mstatus = read_as(PRIV_M, MSTATUS);
@@ -168,7 +202,11 @@ int main(void) {
   RUN_TEST(test_sstatus_write_clears_supervisor_fields);
   RUN_TEST(test_supervisor_csr_is_not_accessible_from_user_mode);
   RUN_TEST(test_machine_csr_is_not_accessible_from_supervisor_mode);
+  RUN_TEST(test_satp_starts_in_bare_mode);
+  RUN_TEST(test_satp_read_overwrites_the_destination);
+  RUN_TEST(test_satp_is_not_accessible_from_user_mode);
 #if XLEN == 64
+  RUN_TEST(test_satp_ignores_a_write_with_an_unsupported_mode);
   RUN_TEST(test_mstatus_reports_64_bit_user_and_supervisor_modes);
   RUN_TEST(test_mstatus_xl_fields_are_read_only);
   RUN_TEST(test_mstatus_xl_fields_ignore_written_values);

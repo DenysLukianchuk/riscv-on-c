@@ -52,7 +52,7 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  cpu_set_pc(machine_get_cpu(machine), entry);
+  machine_boot(machine, entry);
   while (!machine_finished(machine))
     machine_step(machine);
 

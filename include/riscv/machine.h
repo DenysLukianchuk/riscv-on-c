@@ -9,6 +9,7 @@
 typedef struct Machine Machine;
 
 Machine *machine_create(uxlen_t ram_size, UartOutputFn console, void *context);
+void machine_boot(Machine *machine, uxlen_t entry);
 void machine_destroy(Machine *machine);
 
 Cpu *machine_get_cpu(Machine *machine);
@@ -20,5 +21,6 @@ void machine_console_input(Machine *machine, uint8_t byte);
 
 bool machine_finished(Machine *machine);
 int machine_exit_code(Machine *machine);
+const uint8_t *machine_device_tree(Machine *machine, uint32_t *size);
 
 #endif // RISCV_MACHINE_H

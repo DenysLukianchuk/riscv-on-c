@@ -1,5 +1,7 @@
 #include "riscv/machine.h"
+#include "riscv/board.h"
 #include "riscv/clint.h"
+#include "riscv/device_tree.h"
 #include "riscv/finisher.h"
 #include "riscv/hart.h"
 #include "riscv/plic.h"
@@ -8,20 +10,12 @@
 #include <assert.h>
 #include <stdlib.h>
 
-// The memory map follows QEMU's virt board.
-#define FINISHER_BASE 0x00100000
-#define CLINT_BASE 0x02000000
-#define PLIC_BASE 0x0c000000
-#define UART_BASE 0x10000000
-
-#define UART_IRQ 10
-
 #define MTIP INTERRUPT_BIT(INTERRUPT_M_TIMER)
 #define MSIP INTERRUPT_BIT(INTERRUPT_M_SOFTWARE)
 #define MEIP INTERRUPT_BIT(INTERRUPT_M_EXTERNAL)
 
-#define M_CONTEXT 0
-#define S_CONTEXT 1
+#define A0 10
+#define A1 11
 
 struct Machine {
   Memory *memory;
@@ -31,6 +25,7 @@ struct Machine {
   Finisher *finisher;
   Bus *bus;
   Cpu *cpu;
+  Fdt *fdt;
 };
 
 static void attach(Bus *bus, struct BusDevice device) {
@@ -47,13 +42,43 @@ Machine *machine_create(uxlen_t ram_size, UartOutputFn console, void *context) {
   machine->bus = bus_create();
   machine->uart = uart_create(console, context);
   machine->finisher = finisher_create();
-  attach(machine->bus, memory_bus_device(machine->memory, RAM_BASE));
-  attach(machine->bus, clint_bus_device(machine->clint, CLINT_BASE));
-  attach(machine->bus, plic_bus_device(machine->plic, PLIC_BASE));
-  attach(machine->bus, uart_bus_device(machine->uart, UART_BASE));
-  attach(machine->bus, finisher_bus_device(machine->finisher, FINISHER_BASE));
+  machine->fdt = fdt_create();
+  const struct BoardDevices devices = {
+      .ram = memory_bus_device(machine->memory, RAM_BASE),
+      .clint = clint_bus_device(machine->clint, CLINT_BASE),
+      .plic = plic_bus_device(machine->plic, PLIC_BASE),
+      .uart = uart_bus_device(machine->uart, UART_BASE),
+      .finisher = finisher_bus_device(machine->finisher, FINISHER_BASE),
+  };
+  attach(machine->bus, devices.ram);
+  attach(machine->bus, devices.clint);
+  attach(machine->bus, devices.plic);
+  attach(machine->bus, devices.uart);
+  attach(machine->bus, devices.finisher);
   machine->cpu = cpu_create(machine->bus);
+  device_tree_describe(machine->fdt, &devices);
   return machine;
+}
+
+static uxlen_t device_tree_address(Machine *machine, uint32_t size) {
+  uxlen_t end = RAM_BASE + memory_get_size(machine->memory);
+  uxlen_t start = (end - size) & ~7;
+  return start;
+}
+
+void machine_boot(Machine *machine, uxlen_t entry) {
+  cpu_reset(machine->cpu);
+  cpu_set_pc(machine->cpu, entry);
+
+  uint32_t size;
+  const uint8_t *blob = machine_device_tree(machine, &size);
+  uxlen_t start = device_tree_address(machine, size);
+  for (uint32_t i = 0; i < size; i++) {
+    bus_write(machine->bus, start + i, 1, blob[i]);
+  }
+  Registers *regs = cpu_get_registers(machine->cpu);
+  registers_write(regs, A0, 0);
+  registers_write(regs, A1, start);
 }
 
 void machine_destroy(Machine *machine) {
@@ -64,6 +89,7 @@ void machine_destroy(Machine *machine) {
   clint_destroy(machine->clint);
   finisher_destroy(machine->finisher);
   memory_destroy(machine->memory);
+  fdt_destroy(machine->fdt);
   free(machine);
 }
 
@@ -96,4 +122,8 @@ bool machine_finished(Machine *machine) {
 
 int machine_exit_code(Machine *machine) {
   return finisher_exit_code(machine->finisher);
+}
+
+const uint8_t *machine_device_tree(Machine *machine, uint32_t *size) {
+  return fdt_finish(machine->fdt, size);
 }

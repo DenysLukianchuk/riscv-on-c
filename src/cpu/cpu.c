@@ -41,3 +41,11 @@ uxlen_t cpu_get_amo_reservation(Cpu *cpu) { return cpu->amo_reservation; }
 void cpu_set_amo_reservation(Cpu *cpu, uxlen_t amo_reservation) {
   cpu->amo_reservation = amo_reservation;
 }
+
+void cpu_reset(Cpu *cpu) {
+  cpu->pc = 0;
+  cpu->privilege = PRIV_M;
+  cpu->amo_reservation = 0;
+  registers_reset(cpu->regs);
+  csr_reset(cpu->csr);
+}

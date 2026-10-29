@@ -8,10 +8,14 @@ struct Registers {
 
 Registers *registers_create(void) {
   Registers *regs = (Registers *)malloc(sizeof(Registers));
+  registers_reset(regs);
+  return regs;
+}
+
+void registers_reset(Registers *regs) {
   for (int i = 0; i < REG_COUNT; i++) {
     regs->regs[i] = 0;
   }
-  return regs;
 }
 
 void registers_destroy(Registers *regs) { free(regs); }

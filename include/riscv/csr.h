@@ -45,6 +45,7 @@ enum CsrRegister {
   CSR_REG_MIDELEG = 0x303,
   CSR_REG_MIP = 0x344,
   CSR_REG_SIP = 0x144,
+  CSR_REG_SATP = 0x180,
 };
 
 enum CsrResult { CSR_OK, CSR_ILLEGAL };
@@ -110,5 +111,6 @@ void csr_count_icount(Csr *csr, enum Privilege privilege);
 void csr_set_interrupt_pending(Csr *csr, uxlen_t interrupts, bool pending);
 void csr_set_seip_line(Csr *csr, bool raised);
 bool csr_pending_interrupt(Csr *csr, enum Privilege privilege, unsigned *code);
+void csr_reset(Csr *csr);
 
 #endif // RISCV_CSR_H

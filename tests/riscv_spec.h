@@ -17,6 +17,7 @@
 #define SCAUSE 0x142
 #define STVAL 0x143
 #define SIP 0x144
+#define SATP 0x180
 #define MSTATUS 0x300
 #define MISA 0x301
 #define MEDELEG 0x302

@@ -21,5 +21,6 @@ void cpu_set_privilege(Cpu *cpu, enum Privilege privilege);
 uxlen_t cpu_get_amo_reservation(Cpu *cpu);
 void cpu_set_amo_reservation(Cpu *cpu, uxlen_t amo_reservation);
 void cpu_destroy(Cpu *cpu);
+void cpu_reset(Cpu *cpu);
 
 #endif // RISCV_CPU_H

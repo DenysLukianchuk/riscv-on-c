@@ -17,4 +17,6 @@ void registers_write(Registers *regs, uint8_t index, uxlen_t value);
 
 uxlen_t registers_read(Registers *regs, uint8_t index);
 
+void registers_reset(Registers *regs);
+
 #endif // RISCV_REGISTERS_H
