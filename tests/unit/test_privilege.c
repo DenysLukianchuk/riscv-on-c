@@ -177,6 +177,34 @@ static void test_sret_is_illegal_in_user_mode(void) {
   TEST_ASSERT_ILLEGAL_INSTRUCTION(SRET);
 }
 
+// Returning to a mode below M clears MPRV, so M-mode code that set it to
+// reach S or U memory cannot leave it behind.
+static void test_mret_to_a_lower_mode_clears_mprv(void) {
+  write_csr(MSTATUS, MSTATUS_MPRV | MSTATUS_MPP_S);
+
+  execute_raw(MRET);
+
+  TEST_ASSERT_EQUAL_HEX64(0, read_csr(MSTATUS) & MSTATUS_MPRV);
+}
+
+static void test_mret_to_machine_mode_keeps_mprv(void) {
+  write_csr(MSTATUS, MSTATUS_MPRV | MSTATUS_MPP_M);
+
+  execute_raw(MRET);
+
+  TEST_ASSERT_EQUAL_HEX64(MSTATUS_MPRV, read_csr(MSTATUS) & MSTATUS_MPRV);
+}
+
+static void test_sret_clears_mprv(void) {
+  write_csr(MSTATUS, MSTATUS_MPRV);
+  write_csr(SEPC, SEPC_TARGET);
+  cpu_set_privilege(cpu, PRIV_S);
+
+  execute_raw(SRET);
+
+  TEST_ASSERT_EQUAL_HEX64(0, read_csr(MSTATUS) & MSTATUS_MPRV);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_hart_starts_in_machine_mode);
@@ -200,5 +228,8 @@ int main(void) {
   RUN_TEST(test_sret_leaves_machine_fields_of_mstatus);
   RUN_TEST(test_sret_is_allowed_in_machine_mode);
   RUN_TEST(test_sret_is_illegal_in_user_mode);
+  RUN_TEST(test_mret_to_a_lower_mode_clears_mprv);
+  RUN_TEST(test_mret_to_machine_mode_keeps_mprv);
+  RUN_TEST(test_sret_clears_mprv);
   return UNITY_END();
 }

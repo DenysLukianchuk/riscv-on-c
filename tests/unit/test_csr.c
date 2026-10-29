@@ -1,4 +1,4 @@
-#include "riscv/csr.h"
+#include "riscv/cpu/csr.h"
 #include "riscv_spec.h"
 #include "unity.h"
 

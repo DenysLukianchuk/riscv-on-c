@@ -1,7 +1,7 @@
-#include "riscv/csr.h"
-#include "riscv/bits.h"
-#include "riscv/trap_cause.h"
-#include "riscv/trigger.h"
+#include "riscv/cpu/csr.h"
+#include "riscv/cpu/trap_cause.h"
+#include "riscv/cpu/trigger.h"
+#include "riscv/util/bits.h"
 #include <stdlib.h>
 
 enum Counteren { COUNTEREN_CY = 1u << 0, COUNTEREN_IR = 1u << 2 };
@@ -23,9 +23,14 @@ struct ModeRegs {
 
 #define MSTATUS_WRITABLE                                                       \
   (SSTATUS_SIE_BIT | MSTATUS_MIE_BIT | SSTATUS_SPIE_BIT | MSTATUS_MPIE_BIT |   \
-   SSTATUS_SPP_BIT | MSTATUS_MPP_MASK | MSTATUS_TW_BIT)
+   SSTATUS_SPP_BIT | MSTATUS_MPP_MASK | MSTATUS_TW_BIT | SSTATUS_SUM_BIT |     \
+   SSTATUS_MXR_BIT | MSTATUS_MPRV_BIT | MSTATUS_TVM_BIT)
 // MPP value 2 would name H-mode, which this hart does not implement.
 #define MSTATUS_MPP_RESERVED ((uxlen_t)2 << MSTATUS_MPP_SHIFT)
+
+#define SSTATUS_MASK                                                           \
+  (SSTATUS_SIE_BIT | SSTATUS_SPIE_BIT | SSTATUS_SPP_BIT | SSTATUS_SUM_BIT |    \
+   SSTATUS_MXR_BIT)
 
 #define CAUSE_BIT(cause) ((uxlen_t)1 << (cause))
 #define MEDELEG_WRITABLE                                                       \
@@ -38,6 +43,14 @@ struct ModeRegs {
    CAUSE_BIT(TRAP_STORE_ACCESS_FAULT) | CAUSE_BIT(TRAP_ECALL_FROM_U) |         \
    CAUSE_BIT(TRAP_ECALL_FROM_S) | CAUSE_BIT(TRAP_INSTRUCTION_PAGE_FAULT) |     \
    CAUSE_BIT(TRAP_LOAD_PAGE_FAULT) | CAUSE_BIT(TRAP_STORE_PAGE_FAULT))
+
+#if XLEN == 64
+#define SATP_MODE_SV39 8
+#define SATP_MODE_PAGED SATP_MODE_SV39
+#else
+#define SATP_MODE_SV32 1
+#define SATP_MODE_PAGED SATP_MODE_SV32
+#endif
 
 #if XLEN == 64
 #define MSTATUS_UXL_MASK ((uxlen_t)3 << 32)
@@ -63,6 +76,7 @@ struct Csr {
   uxlen_t mip;
   bool minstret_written;
   bool seip_line;
+  uxlen_t satp;
 };
 
 static void mode_regs_init(struct ModeRegs *regs) {
@@ -101,6 +115,7 @@ void csr_reset(Csr *csr) {
   csr->mideleg = 0;
   csr->mip = 0;
   csr->seip_line = false;
+  csr->satp = 0;
   trigger_regs_init(&csr->trigger);
 }
 
@@ -139,6 +154,8 @@ static inline bool csr_is_accessible(Csr *csr, uint16_t addr,
   case CSR_REG_INSTRETH:
 #endif
     return counteren_accessible(csr, COUNTEREN_IR, privilege);
+  case CSR_REG_SATP:
+    return (privilege == PRIV_M) || !(csr->mstatus & MSTATUS_TVM_BIT);
   }
   return true;
 }
@@ -247,7 +264,7 @@ enum CsrResult csr_read(Csr *csr, uint16_t addr, enum Privilege privilege,
     *value = pending_bits(csr) & csr->mideleg;
     return CSR_OK;
   case CSR_REG_SATP:
-    *value = 0; // Bare mode, no translation
+    *value = csr->satp;
     return CSR_OK;
   default:
     return CSR_ILLEGAL;
@@ -303,6 +320,21 @@ static uxlen_t legalize_status(uxlen_t old_value, uxlen_t value,
   if ((status & MSTATUS_MPP_MASK) == MSTATUS_MPP_RESERVED)
     status &= ~MSTATUS_MPP_MASK;
   return status;
+}
+
+uxlen_t satp_mode(uxlen_t value) {
+#if XLEN == 64
+  return bits(value, 63, 60);
+#else
+  return bits(value, 31, 31);
+#endif
+}
+
+static uxlen_t legalize_satp(uxlen_t old_value, uxlen_t value) {
+  uxlen_t mode = satp_mode(value);
+  if (mode != SATP_MODE_PAGED && mode != SATP_MODE_BARE)
+    return old_value;
+  return value;
 }
 
 enum CsrResult csr_write(Csr *csr, uint16_t addr, enum Privilege privilege,
@@ -382,7 +414,7 @@ enum CsrResult csr_write(Csr *csr, uint16_t addr, enum Privilege privilege,
     csr->mip = masked_write(csr->mip, value, csr->mideleg & SSIP);
     return CSR_OK;
   case CSR_REG_SATP:
-    // ignore for now
+    csr->satp = legalize_satp(csr->satp, value);
     return CSR_OK;
   default:
     return CSR_ILLEGAL;

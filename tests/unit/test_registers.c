@@ -1,4 +1,4 @@
-#include "riscv/registers.h"
+#include "riscv/cpu/registers.h"
 #include "unity.h"
 
 static Registers *regs;

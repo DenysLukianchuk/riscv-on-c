@@ -1,7 +1,7 @@
-#ifndef RISCV_TRIGGER_H
-#define RISCV_TRIGGER_H
+#ifndef RISCV_CPU_TRIGGER_H
+#define RISCV_CPU_TRIGGER_H
 
-#include "riscv/privilege.h"
+#include "riscv/cpu/privilege.h"
 #include "riscv/xlen.h"
 #include <stdbool.h>
 
@@ -51,4 +51,4 @@ bool trigger_icount_fire(struct TriggerModule *module,
 void trigger_icount_count(struct TriggerModule *module,
                           enum Privilege privilege);
 
-#endif // RISCV_TRIGGER_H
+#endif // RISCV_CPU_TRIGGER_H

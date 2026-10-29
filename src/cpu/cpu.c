@@ -1,5 +1,5 @@
-#include "riscv/cpu.h"
-#include "riscv/execute.h"
+#include "riscv/cpu/cpu.h"
+#include "riscv/cpu/execute.h"
 #include <stdlib.h>
 
 struct Cpu {

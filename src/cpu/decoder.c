@@ -1,5 +1,5 @@
-#include "riscv/decoder.h"
-#include "riscv/bits.h"
+#include "riscv/cpu/decoder.h"
+#include "riscv/util/bits.h"
 
 static inline void extract_rd(struct Instruction *inst, uint32_t raw) {
   switch (inst->opcode) {

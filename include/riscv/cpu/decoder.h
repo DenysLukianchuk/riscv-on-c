@@ -1,5 +1,5 @@
-#ifndef RISCV_DECODER_H
-#define RISCV_DECODER_H
+#ifndef RISCV_CPU_DECODER_H
+#define RISCV_CPU_DECODER_H
 
 #include "riscv/xlen.h"
 #include <stdint.h>
@@ -135,6 +135,7 @@ enum Funct3_STORE {
 };
 
 enum Funct3_SYSTEM {
+  FUNCT3_PRIV = 0x0,
   FUNCT3_CSRRW = 0x1,
   FUNCT3_CSRRS = 0x2,
   FUNCT3_CSRRC = 0x3,
@@ -167,9 +168,10 @@ enum Funct5_AMO {
 enum Funct7 {
   FUNCT7_ADD = 0x00,
   FUNCT7_MUL = 0x01,
+  FUNCT7_SFENCE_VMA = 0x09,
   FUNCT7_SUB = 0x20,
 };
 
 struct Instruction instruction_decode(uint32_t raw);
 
-#endif // RISCV_DECODER_H
+#endif // RISCV_CPU_DECODER_H

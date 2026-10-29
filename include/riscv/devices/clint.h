@@ -1,7 +1,7 @@
-#ifndef RISCV_CLINT_H
-#define RISCV_CLINT_H
+#ifndef RISCV_DEVICES_CLINT_H
+#define RISCV_DEVICES_CLINT_H
 
-#include "riscv/device.h"
+#include "riscv/system/device.h"
 #include "riscv/xlen.h"
 #include <stdbool.h>
 
@@ -19,4 +19,4 @@ bool clint_software_pending(const Clint *clint);
 
 struct BusDevice clint_bus_device(Clint *clint, uxlen_t base);
 
-#endif // RISCV_CLINT_H
+#endif // RISCV_DEVICES_CLINT_H

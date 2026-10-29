@@ -1,7 +1,7 @@
-#include "riscv/trigger.h"
-#include "riscv/bits.h"
-#include "riscv/decoder.h"
-#include "riscv/trap_cause.h"
+#include "riscv/cpu/trigger.h"
+#include "riscv/cpu/decoder.h"
+#include "riscv/cpu/trap_cause.h"
+#include "riscv/util/bits.h"
 #include <stddef.h>
 
 enum TriggerType {

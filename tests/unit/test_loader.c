@@ -1,6 +1,7 @@
-#include "riscv/bus.h"
-#include "riscv/loader.h"
-#include "riscv/memory.h"
+#include "riscv/devices/memory.h"
+#include "riscv/system/board.h"
+#include "riscv/system/bus.h"
+#include "riscv/system/loader.h"
 #include "unity.h"
 
 #include <string.h>

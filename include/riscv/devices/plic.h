@@ -1,7 +1,7 @@
-#ifndef RISCV_PLIC_H
-#define RISCV_PLIC_H
+#ifndef RISCV_DEVICES_PLIC_H
+#define RISCV_DEVICES_PLIC_H
 
-#include "riscv/device.h"
+#include "riscv/system/device.h"
 #include "riscv/xlen.h"
 #include <stdbool.h>
 
@@ -16,4 +16,4 @@ void plic_set_source(Plic *plic, unsigned source, bool raised);
 bool plic_interrupt_pending(const Plic *plic, unsigned context);
 struct BusDevice plic_bus_device(Plic *plic, uxlen_t base);
 
-#endif // RISCV_PLIC_H
+#endif // RISCV_DEVICES_PLIC_H

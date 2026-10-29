@@ -1,4 +1,4 @@
-#include "riscv/registers.h"
+#include "riscv/cpu/registers.h"
 #include <assert.h>
 #include <stdlib.h>
 

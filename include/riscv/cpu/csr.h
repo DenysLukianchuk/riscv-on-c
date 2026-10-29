@@ -1,7 +1,7 @@
-#ifndef RISCV_CSR_H
-#define RISCV_CSR_H
+#ifndef RISCV_CPU_CSR_H
+#define RISCV_CPU_CSR_H
 
-#include "riscv/privilege.h"
+#include "riscv/cpu/privilege.h"
 #include "riscv/xlen.h"
 #include <stdbool.h>
 
@@ -55,18 +55,25 @@ enum Mstatus {
   MSTATUS_MPIE_BIT = 0x80,
   MSTATUS_MPP_MASK = 0x1800,
   MSTATUS_MPP_MACHINE = 0x1800,
-  MSTATUS_TW_BIT = 0x00200000u
+  MSTATUS_TW_BIT = 0x00200000u,
+  MSTATUS_MPRV_BIT = 0x20000,
+  MSTATUS_TVM_BIT = 0x100000,
 };
 
 enum Sstatus {
   SSTATUS_SIE_BIT = 0x2,
   SSTATUS_SPIE_BIT = 0x20,
   SSTATUS_SPP_BIT = 0x100,
-  SSTATUS_MASK = SSTATUS_SIE_BIT | SSTATUS_SPIE_BIT | SSTATUS_SPP_BIT
+  SSTATUS_SUM_BIT = 0x40000,
+  SSTATUS_MXR_BIT = 0x80000,
 };
 
 #define MSTATUS_MPP_SHIFT 11
 #define SSTATUS_SPP_SHIFT 8
+
+static inline enum Privilege mstatus_mpp(uxlen_t mstatus) {
+  return (enum Privilege)((mstatus & MSTATUS_MPP_MASK) >> MSTATUS_MPP_SHIFT);
+}
 
 #define MISA_MXL_SHIFT (XLEN - 2)
 #define MISA_MXL_32 1
@@ -82,6 +89,8 @@ enum Sstatus {
 #define MISA_U MISA_EXTENSION('U')
 #define MISA_S MISA_EXTENSION('S')
 #define MISA_A MISA_EXTENSION('A')
+
+#define SATP_MODE_BARE 0
 
 typedef struct Csr Csr;
 
@@ -112,5 +121,6 @@ void csr_set_interrupt_pending(Csr *csr, uxlen_t interrupts, bool pending);
 void csr_set_seip_line(Csr *csr, bool raised);
 bool csr_pending_interrupt(Csr *csr, enum Privilege privilege, unsigned *code);
 void csr_reset(Csr *csr);
+uxlen_t satp_mode(uxlen_t value);
 
-#endif // RISCV_CSR_H
+#endif // RISCV_CPU_CSR_H

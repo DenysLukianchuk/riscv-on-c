@@ -1,4 +1,4 @@
-#include "riscv/finisher.h"
+#include "riscv/devices/finisher.h"
 #include <stdlib.h>
 
 // QEMU's sifive_test: one write-only word. Its low half says what to do, and
@@ -29,7 +29,7 @@ enum BusStatus finisher_read(Finisher *finisher, uxlen_t offset, unsigned size,
   (void)finisher;
   (void)offset;
   if (size != REGISTER_SIZE)
-    return BUS_ACCESS_FAULT;
+    return BUS_ERROR;
   *value = 0;
   return BUS_OK;
 }
@@ -37,7 +37,7 @@ enum BusStatus finisher_read(Finisher *finisher, uxlen_t offset, unsigned size,
 enum BusStatus finisher_write(Finisher *finisher, uxlen_t offset, unsigned size,
                               uint64_t value) {
   if (size != REGISTER_SIZE)
-    return BUS_ACCESS_FAULT;
+    return BUS_ERROR;
   if (offset != 0)
     return BUS_OK;
   switch (value & STATUS_MASK) {

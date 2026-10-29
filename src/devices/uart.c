@@ -1,5 +1,5 @@
-#include "riscv/uart.h"
-#include "riscv/fifo.h"
+#include "riscv/devices/uart.h"
+#include "riscv/util/fifo.h"
 #include <stdbool.h>
 #include <stdlib.h>
 
@@ -73,9 +73,9 @@ static uint8_t interrupt_id(const Uart *uart) {
 enum BusStatus uart_read(Uart *uart, uxlen_t offset, unsigned size,
                          uint64_t *value) {
   if (size != 1)
-    return BUS_ACCESS_FAULT;
+    return BUS_ERROR;
   if (offset > SCR)
-    return BUS_ACCESS_FAULT;
+    return BUS_ERROR;
   switch (offset) {
   case LSR:
     *value = line_status(uart);
@@ -110,9 +110,9 @@ enum BusStatus uart_read(Uart *uart, uxlen_t offset, unsigned size,
 enum BusStatus uart_write(Uart *uart, uxlen_t offset, unsigned size,
                           uint64_t value) {
   if (size != 1)
-    return BUS_ACCESS_FAULT;
+    return BUS_ERROR;
   if (offset > SCR)
-    return BUS_ACCESS_FAULT;
+    return BUS_ERROR;
   switch (offset) {
   case THR:
     if (dlab(uart)) {

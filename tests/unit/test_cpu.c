@@ -1,5 +1,6 @@
 #include "cpu_fixture.h"
-#include "riscv/trap.h"
+#include "riscv/cpu/trap.h"
+#include "riscv/system/board.h"
 
 static void test_execute_advances_pc_to_next_instruction(void) {
   cpu_set_pc(cpu, 0x80000000);

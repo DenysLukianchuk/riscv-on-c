@@ -1,4 +1,4 @@
-#include "riscv/fdt.h"
+#include "riscv/util/fdt.h"
 #include <stdlib.h>
 #include <string.h>
 

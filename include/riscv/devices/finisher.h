@@ -1,7 +1,7 @@
-#ifndef RISCV_FINISHER_H
-#define RISCV_FINISHER_H
+#ifndef RISCV_DEVICES_FINISHER_H
+#define RISCV_DEVICES_FINISHER_H
 
-#include "riscv/device.h"
+#include "riscv/system/device.h"
 #include "riscv/xlen.h"
 #include <stdbool.h>
 
@@ -17,4 +17,4 @@ bool finisher_finished(const Finisher *finisher);
 int finisher_exit_code(const Finisher *finisher);
 struct BusDevice finisher_bus_device(Finisher *finisher, uxlen_t base);
 
-#endif // RISCV_FINISHER_H
+#endif // RISCV_DEVICES_FINISHER_H

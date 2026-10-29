@@ -1,5 +1,5 @@
-#include "riscv/memory.h"
-#include "riscv/bits.h"
+#include "riscv/devices/memory.h"
+#include "riscv/util/bits.h"
 #include <assert.h>
 #include <stdlib.h>
 

@@ -1,4 +1,4 @@
-#include "riscv/bus.h"
+#include "riscv/system/bus.h"
 #include <stdlib.h>
 
 #define BUS_MAX_DEVICES 8
@@ -50,7 +50,7 @@ enum BusStatus bus_read(Bus *bus, uxlen_t addr, unsigned size,
                         uint64_t *value) {
   struct BusDevice *dev = find_device(bus, addr, size);
   if (dev == NULL)
-    return BUS_ACCESS_FAULT;
+    return BUS_ERROR;
   return dev->read(dev->device, addr - dev->base, size, value);
 }
 
@@ -58,6 +58,6 @@ enum BusStatus bus_write(Bus *bus, uxlen_t addr, unsigned size,
                          uint64_t value) {
   struct BusDevice *dev = find_device(bus, addr, size);
   if (dev == NULL)
-    return BUS_ACCESS_FAULT;
+    return BUS_ERROR;
   return dev->write(dev->device, addr - dev->base, size, value);
 }

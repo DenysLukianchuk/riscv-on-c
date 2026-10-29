@@ -145,6 +145,44 @@ static void test_wfi_in_user_mode_is_illegal(void) {
   TEST_ASSERT_ILLEGAL_INSTRUCTION(WFI);
 }
 
+// sfence.vma orders page table writes before later translations. Without a
+// TLB there is nothing to flush, so it retires; but it is still illegal in
+// U-mode, and in S-mode when mstatus.TVM (trap virtual memory) is set.
+static void assert_sfence_vma_retires(void) {
+  write_csr(MCAUSE, 0xFF);
+  cpu_set_pc(cpu, RAM_BASE);
+
+  execute_raw(SFENCE_VMA(1, 2));
+
+  TEST_ASSERT_EQUAL_HEX64(0xFF, read_csr(MCAUSE));
+  TEST_ASSERT_EQUAL_HEX64(RAM_BASE + 4, cpu_get_pc(cpu));
+}
+
+static void test_sfence_vma_in_supervisor_mode_retires(void) {
+  cpu_set_privilege(cpu, PRIV_S);
+
+  assert_sfence_vma_retires();
+}
+
+static void test_sfence_vma_in_machine_mode_ignores_tvm(void) {
+  write_csr(MSTATUS, MSTATUS_TVM);
+
+  assert_sfence_vma_retires();
+}
+
+static void test_sfence_vma_in_supervisor_mode_with_tvm_is_illegal(void) {
+  write_csr(MSTATUS, MSTATUS_TVM);
+  cpu_set_privilege(cpu, PRIV_S);
+
+  TEST_ASSERT_ILLEGAL_INSTRUCTION(SFENCE_VMA(1, 2));
+}
+
+static void test_sfence_vma_in_user_mode_is_illegal(void) {
+  cpu_set_privilege(cpu, PRIV_U);
+
+  TEST_ASSERT_ILLEGAL_INSTRUCTION(SFENCE_VMA(1, 2));
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_ecall_in_machine_mode_raises_environment_call_from_m);
@@ -164,5 +202,9 @@ int main(void) {
   RUN_TEST(test_wfi_in_supervisor_mode_retires);
   RUN_TEST(test_wfi_in_supervisor_mode_with_tw_is_illegal);
   RUN_TEST(test_wfi_in_user_mode_is_illegal);
+  RUN_TEST(test_sfence_vma_in_supervisor_mode_retires);
+  RUN_TEST(test_sfence_vma_in_machine_mode_ignores_tvm);
+  RUN_TEST(test_sfence_vma_in_supervisor_mode_with_tvm_is_illegal);
+  RUN_TEST(test_sfence_vma_in_user_mode_is_illegal);
   return UNITY_END();
 }

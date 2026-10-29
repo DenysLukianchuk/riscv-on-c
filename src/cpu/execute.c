@@ -1,18 +1,41 @@
-#include "riscv/execute.h"
-#include "riscv/bits.h"
-#include "riscv/trap.h"
+#include "riscv/cpu/execute.h"
+#include "riscv/cpu/mmu.h"
+#include "riscv/cpu/trap.h"
+#include "riscv/util/bits.h"
 #include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
 
-static int trap(Cpu *cpu, uxlen_t cause, uxlen_t tval, uxlen_t *next_pc) {
+#define PC_INCREMENT 4
+
+#define INSTRUCTION_ECALL 0x00000073
+#define INSTRUCTION_EBREAK 0x00100073
+#define INSTRUCTION_MRET 0x30200073
+#define INSTRUCTION_SRET 0x10200073
+#define INSTRUCTION_WFI 0x10500073
+
+static enum ExecuteResult trap(Cpu *cpu, uxlen_t cause, uxlen_t tval,
+                               uxlen_t *next_pc) {
   *next_pc = cpu_raise_exception(cpu, cause, tval);
   return EXECUTE_TRAP;
 }
 
-static int illegal_instruction(Cpu *cpu, const struct Instruction *inst,
-                               uxlen_t *next_pc) {
+static enum ExecuteResult illegal_instruction(Cpu *cpu,
+                                              const struct Instruction *inst,
+                                              uxlen_t *next_pc) {
   return trap(cpu, TRAP_ILLEGAL_INSTRUCTION, inst->raw, next_pc);
+}
+
+static enum ExecuteResult translate(Cpu *cpu, uxlen_t addr,
+                                    enum MmuAccess access, uint64_t *paddr,
+                                    uxlen_t *next_pc) {
+  uint64_t phys_addr;
+  enum MmuResult mmu_res = mmu_translate(cpu, addr, access, &phys_addr);
+  if (mmu_res != MMU_OK) {
+    return trap(cpu, mmu_fault_cause(mmu_res, access), addr, next_pc);
+  }
+  *paddr = phys_addr;
+  return EXECUTE_OK;
 }
 
 static uxlen_t alu(uint8_t funct3, bool alternate, uxlen_t a, uxlen_t b) {
@@ -136,8 +159,8 @@ static bool op_imm_alternate(const struct Instruction *inst) {
          bits(inst->imm, SHIFT_IMM_ARITHMETIC_BIT, SHIFT_IMM_ARITHMETIC_BIT);
 }
 
-static int execute_op_imm(Cpu *cpu, const struct Instruction *inst,
-                          uxlen_t *next_pc) {
+static enum ExecuteResult
+execute_op_imm(Cpu *cpu, const struct Instruction *inst, uxlen_t *next_pc) {
   if (!shift_imm_valid(inst->funct3, inst->imm, SHAMT_LEN))
     return illegal_instruction(cpu, inst, next_pc);
 
@@ -150,8 +173,8 @@ static int execute_op_imm(Cpu *cpu, const struct Instruction *inst,
 }
 
 #if XLEN == 64
-static int execute_op_imm_32(Cpu *cpu, const struct Instruction *inst,
-                             uxlen_t *next_pc) {
+static enum ExecuteResult
+execute_op_imm_32(Cpu *cpu, const struct Instruction *inst, uxlen_t *next_pc) {
   if (!has_w_form(inst->funct3) ||
       !shift_imm_valid(inst->funct3, inst->imm, SHAMT_LEN_32))
     return illegal_instruction(cpu, inst, next_pc);
@@ -177,8 +200,8 @@ static bool op_funct7_valid(uint8_t funct3, uint8_t funct7) {
   }
 }
 
-static int execute_op(Cpu *cpu, const struct Instruction *inst,
-                      uxlen_t *next_pc) {
+static enum ExecuteResult execute_op(Cpu *cpu, const struct Instruction *inst,
+                                     uxlen_t *next_pc) {
   if (!op_funct7_valid(inst->funct3, inst->funct7))
     return illegal_instruction(cpu, inst, next_pc);
 
@@ -200,8 +223,8 @@ static bool op_32_valid(uint8_t funct3, uint8_t funct7) {
   return has_w_form(funct3) && op_funct7_valid(funct3, funct7);
 }
 
-static int execute_op_32(Cpu *cpu, const struct Instruction *inst,
-                         uxlen_t *next_pc) {
+static enum ExecuteResult
+execute_op_32(Cpu *cpu, const struct Instruction *inst, uxlen_t *next_pc) {
   if (!op_32_valid(inst->funct3, inst->funct7))
     return illegal_instruction(cpu, inst, next_pc);
 
@@ -217,19 +240,22 @@ static int execute_op_32(Cpu *cpu, const struct Instruction *inst,
 }
 #endif
 
-static int execute_lui(Cpu *cpu, const struct Instruction *inst) {
+static enum ExecuteResult execute_lui(Cpu *cpu,
+                                      const struct Instruction *inst) {
   registers_write(cpu_get_registers(cpu), inst->rd, inst->imm);
   return EXECUTE_OK;
 }
 
-static int execute_auipc(Cpu *cpu, const struct Instruction *inst) {
+static enum ExecuteResult execute_auipc(Cpu *cpu,
+                                        const struct Instruction *inst) {
   registers_write(cpu_get_registers(cpu), inst->rd,
                   cpu_get_pc(cpu) + inst->imm);
   return EXECUTE_OK;
 }
 
-static int execute_jump_base(Cpu *cpu, const struct Instruction *inst,
-                             uxlen_t target, uxlen_t *next_pc) {
+static enum ExecuteResult execute_jump_base(Cpu *cpu,
+                                            const struct Instruction *inst,
+                                            uxlen_t target, uxlen_t *next_pc) {
   if (target % 4)
     return trap(cpu, TRAP_INSTRUCTION_ADDRESS_MISALIGNED, target, next_pc);
   registers_write(cpu_get_registers(cpu), inst->rd, *next_pc);
@@ -237,13 +263,13 @@ static int execute_jump_base(Cpu *cpu, const struct Instruction *inst,
   return EXECUTE_OK;
 }
 
-static int execute_jal(Cpu *cpu, const struct Instruction *inst,
-                       uxlen_t *next_pc) {
+static enum ExecuteResult execute_jal(Cpu *cpu, const struct Instruction *inst,
+                                      uxlen_t *next_pc) {
   return execute_jump_base(cpu, inst, cpu_get_pc(cpu) + inst->imm, next_pc);
 }
 
-static int execute_jalr(Cpu *cpu, const struct Instruction *inst,
-                        uxlen_t *next_pc) {
+static enum ExecuteResult execute_jalr(Cpu *cpu, const struct Instruction *inst,
+                                       uxlen_t *next_pc) {
   if (inst->funct3 != FUNCT3_JALR) {
     return illegal_instruction(cpu, inst, next_pc);
   }
@@ -254,8 +280,8 @@ static int execute_jalr(Cpu *cpu, const struct Instruction *inst,
       next_pc);
 }
 
-static int execute_branch(Cpu *cpu, const struct Instruction *inst,
-                          uxlen_t *next_pc) {
+static enum ExecuteResult
+execute_branch(Cpu *cpu, const struct Instruction *inst, uxlen_t *next_pc) {
   uxlen_t rs1_val = registers_read(cpu_get_registers(cpu), inst->rs1);
   uxlen_t rs2_val = registers_read(cpu_get_registers(cpu), inst->rs2);
   bool taken;
@@ -302,8 +328,8 @@ static inline bool store_trigger_hit(Cpu *cpu, uint8_t size, uxlen_t addr,
                                  size, data, tval);
 }
 
-static int execute_load(Cpu *cpu, const struct Instruction *inst,
-                        uxlen_t *next_pc) {
+static enum ExecuteResult execute_load(Cpu *cpu, const struct Instruction *inst,
+                                       uxlen_t *next_pc) {
   uxlen_t addr = registers_read(cpu_get_registers(cpu), inst->rs1) + inst->imm;
   uint8_t size = 0;
   switch (inst->funct3) {
@@ -333,8 +359,15 @@ static int execute_load(Cpu *cpu, const struct Instruction *inst,
   if (load_trigger_hit(cpu, size, addr, NULL, &tval)) {
     return trap(cpu, TRAP_BREAKPOINT, tval, next_pc);
   }
+
+  uint64_t phys_addr;
+  enum ExecuteResult translate_result =
+      translate(cpu, addr, MMU_LOAD, &phys_addr, next_pc);
+  if (translate_result != EXECUTE_OK)
+    return translate_result;
+
   uint64_t val;
-  uint8_t res = bus_read(cpu_get_bus(cpu), addr, size, &val);
+  enum BusStatus res = bus_read(cpu_get_bus(cpu), phys_addr, size, &val);
   if (res != BUS_OK) {
     return trap(cpu, TRAP_LOAD_ACCESS_FAULT, addr, next_pc);
   }
@@ -353,8 +386,8 @@ static int execute_load(Cpu *cpu, const struct Instruction *inst,
   return EXECUTE_OK;
 }
 
-static int execute_store(Cpu *cpu, const struct Instruction *inst,
-                         uxlen_t *next_pc) {
+static enum ExecuteResult
+execute_store(Cpu *cpu, const struct Instruction *inst, uxlen_t *next_pc) {
   uxlen_t addr = registers_read(cpu_get_registers(cpu), inst->rs1) + inst->imm;
   uint8_t size = 0;
   switch (inst->funct3) {
@@ -384,38 +417,66 @@ static int execute_store(Cpu *cpu, const struct Instruction *inst,
   if (store_trigger_hit(cpu, size, addr, &data, &tval)) {
     return trap(cpu, TRAP_BREAKPOINT, tval, next_pc);
   }
-  uint8_t res = bus_write(cpu_get_bus(cpu), addr, size, val);
+
+  uint64_t phys_addr;
+  enum ExecuteResult translate_result =
+      translate(cpu, addr, MMU_STORE, &phys_addr, next_pc);
+  if (translate_result != EXECUTE_OK)
+    return translate_result;
+
+  enum BusStatus res = bus_write(cpu_get_bus(cpu), phys_addr, size, val);
   if (res != BUS_OK) {
     return trap(cpu, TRAP_STORE_ACCESS_FAULT, addr, next_pc);
   }
   return EXECUTE_OK;
 }
 
-static int execute_wfi(Cpu *cpu, const struct Instruction *inst,
-                       enum Privilege privilege, uxlen_t *next_pc) {
+static bool allowed_below_m(Cpu *cpu, enum Privilege privilege,
+                            uxlen_t trap_bit) {
   uxlen_t mstatus;
   csr_read(cpu_get_csr(cpu), CSR_REG_MSTATUS, PRIV_M, &mstatus);
-  bool tw = mstatus & MSTATUS_TW_BIT;
-  if (privilege == PRIV_U || (privilege == PRIV_S && tw))
+  return privilege == PRIV_M || (privilege == PRIV_S && !(mstatus & trap_bit));
+}
+
+static enum ExecuteResult execute_wfi(Cpu *cpu, const struct Instruction *inst,
+                                      enum Privilege privilege,
+                                      uxlen_t *next_pc) {
+  if (!allowed_below_m(cpu, privilege, MSTATUS_TW_BIT))
     return illegal_instruction(cpu, inst, next_pc);
   return EXECUTE_OK;
 }
 
-static int execute_system(Cpu *cpu, const struct Instruction *inst,
-                          uxlen_t *next_pc) {
+static enum ExecuteResult execute_sfence_vma(Cpu *cpu,
+                                             const struct Instruction *inst,
+                                             enum Privilege privilege,
+                                             uxlen_t *next_pc) {
+  if (!allowed_below_m(cpu, privilege, MSTATUS_TVM_BIT))
+    return illegal_instruction(cpu, inst, next_pc);
+  return EXECUTE_OK;
+}
+
+static bool is_sfence_vma(const struct Instruction *inst) {
+  return inst->funct3 == FUNCT3_PRIV && inst->funct7 == FUNCT7_SFENCE_VMA &&
+         inst->rd == 0;
+}
+
+static enum ExecuteResult
+execute_system(Cpu *cpu, const struct Instruction *inst, uxlen_t *next_pc) {
   enum Privilege privilege = cpu_get_privilege(cpu);
-  if (inst->raw == TRAP_INSTRUCTION_ECALL)
+  if (inst->raw == INSTRUCTION_ECALL) {
     return trap(cpu, TRAP_ECALL_FROM_U + privilege, 0, next_pc);
-  else if (inst->raw == TRAP_INSTRUCTION_EBREAK)
+  } else if (inst->raw == INSTRUCTION_EBREAK) {
     return trap(cpu, TRAP_BREAKPOINT, cpu_get_pc(cpu), next_pc);
-  else if (privilege >= PRIV_M && inst->raw == TRAP_INSTRUCTION_MRET) {
+  } else if (privilege >= PRIV_M && inst->raw == INSTRUCTION_MRET) {
     *next_pc = cpu_return_from_trap(cpu, PRIV_M);
     return EXECUTE_OK;
-  } else if (privilege >= PRIV_S && inst->raw == TRAP_INSTRUCTION_SRET) {
+  } else if (privilege >= PRIV_S && inst->raw == INSTRUCTION_SRET) {
     *next_pc = cpu_return_from_trap(cpu, PRIV_S);
     return EXECUTE_OK;
-  } else if (inst->raw == TRAP_INSTRUCTION_WFI) {
+  } else if (inst->raw == INSTRUCTION_WFI) {
     return execute_wfi(cpu, inst, privilege, next_pc);
+  } else if (is_sfence_vma(inst)) {
+    return execute_sfence_vma(cpu, inst, privilege, next_pc);
   }
 
   uint32_t csr_addr = (uint32_t)(inst->imm & 0xFFF);
@@ -465,16 +526,16 @@ static int execute_system(Cpu *cpu, const struct Instruction *inst,
   return EXECUTE_OK;
 }
 
-static int execute_fence(Cpu *cpu, const struct Instruction *inst,
-                         uxlen_t *next_pc) {
+static enum ExecuteResult
+execute_fence(Cpu *cpu, const struct Instruction *inst, uxlen_t *next_pc) {
   if (inst->funct3 != FUNCT3_FENCE && inst->funct3 != FUNCT3_FENCE_I) {
     return illegal_instruction(cpu, inst, next_pc);
   }
   return EXECUTE_OK;
 }
 
-static int amo_lr(Cpu *cpu, const struct Instruction *inst, uint8_t size,
-                  uxlen_t *next_pc) {
+static enum ExecuteResult amo_lr(Cpu *cpu, const struct Instruction *inst,
+                                 uint8_t size, uxlen_t *next_pc) {
   uxlen_t rs1_addr = registers_read(cpu_get_registers(cpu), inst->rs1);
   uxlen_t tval;
   if (load_trigger_hit(cpu, size, rs1_addr, NULL, &tval)) {
@@ -482,8 +543,15 @@ static int amo_lr(Cpu *cpu, const struct Instruction *inst, uint8_t size,
   }
   if (rs1_addr % size != 0)
     return trap(cpu, TRAP_LOAD_ADDRESS_MISALIGNED, rs1_addr, next_pc);
+
+  uint64_t phys_addr;
+  enum ExecuteResult translate_result =
+      translate(cpu, rs1_addr, MMU_LOAD, &phys_addr, next_pc);
+  if (translate_result != EXECUTE_OK)
+    return translate_result;
+
   uint64_t value;
-  if (bus_read(cpu_get_bus(cpu), rs1_addr, size, &value) != BUS_OK)
+  if (bus_read(cpu_get_bus(cpu), phys_addr, size, &value) != BUS_OK)
     return trap(cpu, TRAP_LOAD_ACCESS_FAULT, rs1_addr, next_pc);
 
   uxlen_t data = (uxlen_t)value;
@@ -499,8 +567,8 @@ static int amo_lr(Cpu *cpu, const struct Instruction *inst, uint8_t size,
 
 enum ScResult { SC_SUCCESS = 0, SC_FAILURE = 1 };
 
-static int amo_sc(Cpu *cpu, const struct Instruction *inst, uint8_t size,
-                  uxlen_t *next_pc) {
+static enum ExecuteResult amo_sc(Cpu *cpu, const struct Instruction *inst,
+                                 uint8_t size, uxlen_t *next_pc) {
   uxlen_t rs1_addr = registers_read(cpu_get_registers(cpu), inst->rs1);
   if (rs1_addr % size != 0)
     return trap(cpu, TRAP_STORE_ADDRESS_MISALIGNED, rs1_addr, next_pc);
@@ -520,7 +588,13 @@ static int amo_sc(Cpu *cpu, const struct Instruction *inst, uint8_t size,
     return trap(cpu, TRAP_BREAKPOINT, tval, next_pc);
   }
 
-  if (bus_write(cpu_get_bus(cpu), rs1_addr, size, rs2_val) != BUS_OK)
+  uint64_t phys_addr;
+  enum ExecuteResult translate_result =
+      translate(cpu, rs1_addr, MMU_STORE, &phys_addr, next_pc);
+  if (translate_result != EXECUTE_OK)
+    return translate_result;
+
+  if (bus_write(cpu_get_bus(cpu), phys_addr, size, rs2_val) != BUS_OK)
     return trap(cpu, TRAP_STORE_ACCESS_FAULT, rs1_addr, next_pc);
 
   registers_write(cpu_get_registers(cpu), inst->rd, SC_SUCCESS);
@@ -592,8 +666,8 @@ static int64_t amo_operand(uint64_t value, uint8_t size) {
 
 static inline uxlen_t lower_tval(uxlen_t a, uxlen_t b) { return a < b ? a : b; }
 
-static int execute_amo(Cpu *cpu, const struct Instruction *inst,
-                       uxlen_t *next_pc) {
+static enum ExecuteResult execute_amo(Cpu *cpu, const struct Instruction *inst,
+                                      uxlen_t *next_pc) {
   uint8_t size;
   if (!amo_size(inst->funct3, &size))
     return illegal_instruction(cpu, inst, next_pc);
@@ -619,10 +693,16 @@ static int execute_amo(Cpu *cpu, const struct Instruction *inst,
   if (addr % size != 0)
     return trap(cpu, TRAP_STORE_ADDRESS_MISALIGNED, addr, next_pc);
 
+  uint64_t phys_addr;
+  enum ExecuteResult translate_result =
+      translate(cpu, addr, MMU_STORE, &phys_addr, next_pc);
+  if (translate_result != EXECUTE_OK)
+    return translate_result;
+
   Bus *bus = cpu_get_bus(cpu);
   uint64_t loaded;
-  // AMOs report the read half as a store access fault too.
-  if (bus_read(bus, addr, size, &loaded) != BUS_OK)
+  // The read half faults as a store too.
+  if (bus_read(bus, phys_addr, size, &loaded) != BUS_OK)
     return trap(cpu, TRAP_STORE_ACCESS_FAULT, addr, next_pc);
 
   uxlen_t tval;
@@ -640,14 +720,14 @@ static int execute_amo(Cpu *cpu, const struct Instruction *inst,
   if (store_trigger_hit(cpu, size, addr, &data, &tval))
     return trap(cpu, TRAP_BREAKPOINT, tval, next_pc);
 
-  if (bus_write(bus, addr, size, (uint64_t)result) != BUS_OK)
+  if (bus_write(bus, phys_addr, size, (uint64_t)result) != BUS_OK)
     return trap(cpu, TRAP_STORE_ACCESS_FAULT, addr, next_pc);
 
   registers_write(regs, inst->rd, (uxlen_t)old);
   return EXECUTE_OK;
 }
 
-int cpu_execute(Cpu *cpu, const struct Instruction *inst) {
+enum ExecuteResult cpu_execute(Cpu *cpu, const struct Instruction *inst) {
   uxlen_t next_pc = cpu_get_pc(cpu) + PC_INCREMENT;
   int status;
   switch (inst->opcode) {

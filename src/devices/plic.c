@@ -1,4 +1,4 @@
-#include "riscv/plic.h"
+#include "riscv/devices/plic.h"
 #include <stdlib.h>
 
 #define PLIC_SOURCES 32
@@ -94,7 +94,7 @@ static void complete(Plic *plic, unsigned context, uint32_t source) {
 enum BusStatus plic_read(Plic *plic, uxlen_t offset, unsigned size,
                          uint64_t *value) {
   if (size != REGISTER_SIZE || offset % REGISTER_SIZE)
-    return BUS_ACCESS_FAULT;
+    return BUS_ERROR;
   unsigned source = source_at(offset);
   unsigned enable_context = enable_context_at(offset);
   unsigned context = context_at(offset);
@@ -128,7 +128,7 @@ enum BusStatus plic_read(Plic *plic, uxlen_t offset, unsigned size,
 enum BusStatus plic_write(Plic *plic, uxlen_t offset, unsigned size,
                           uint64_t value) {
   if (size != REGISTER_SIZE || offset % REGISTER_SIZE)
-    return BUS_ACCESS_FAULT;
+    return BUS_ERROR;
   unsigned source = source_at(offset);
   unsigned enable_context = enable_context_at(offset);
   unsigned context = context_at(offset);

@@ -1,7 +1,8 @@
-#include "riscv/hart.h"
-#include "riscv/bus.h"
-#include "riscv/execute.h"
-#include "riscv/trap.h"
+#include "riscv/cpu/hart.h"
+#include "riscv/cpu/execute.h"
+#include "riscv/cpu/mmu.h"
+#include "riscv/cpu/trap.h"
+#include "riscv/system/bus.h"
 #include <stddef.h>
 
 static void step_instruction(Cpu *cpu) {
@@ -20,10 +21,19 @@ static void step_instruction(Cpu *cpu) {
     cpu_set_pc(cpu, cpu_raise_exception(cpu, TRAP_BREAKPOINT, tval));
     return;
   }
+
+  uint64_t phys_pc;
+  enum MmuResult mmu_res = mmu_translate(cpu, pc, MMU_FETCH, &phys_pc);
+  if (mmu_res != MMU_OK) {
+    cpu_set_pc(
+        cpu, cpu_raise_exception(cpu, mmu_fault_cause(mmu_res, MMU_FETCH), pc));
+    return;
+  }
+
   uint64_t instruction;
-  int res =
-      bus_read(cpu_get_bus(cpu), pc, INSTRUCTION_WIDTH_BYTES, &instruction);
-  if (res != 0) {
+  enum BusStatus res = bus_read(cpu_get_bus(cpu), phys_pc,
+                                INSTRUCTION_WIDTH_BYTES, &instruction);
+  if (res != BUS_OK) {
     cpu_set_pc(cpu,
                cpu_raise_exception(cpu, TRAP_INSTRUCTION_ACCESS_FAULT, pc));
     return;
@@ -35,7 +45,7 @@ static void step_instruction(Cpu *cpu) {
   }
   struct Instruction inst = instruction_decode(instruction);
   csr_begin_instruction(csr);
-  int execute_result = cpu_execute(cpu, &inst);
+  enum ExecuteResult execute_result = cpu_execute(cpu, &inst);
   csr_end_instruction(csr, execute_result == EXECUTE_OK);
 }
 

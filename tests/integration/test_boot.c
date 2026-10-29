@@ -1,4 +1,4 @@
-#include "riscv/machine.h"
+#include "riscv/system/machine.h"
 #include "riscv_asm.h"
 #include "unity.h"
 

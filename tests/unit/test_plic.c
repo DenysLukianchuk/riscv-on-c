@@ -1,4 +1,4 @@
-#include "riscv/plic.h"
+#include "riscv/devices/plic.h"
 #include "riscv_spec.h"
 #include "unity.h"
 
@@ -278,11 +278,11 @@ static void test_missing_context_registers_read_zero(void) {
 static void test_only_aligned_word_accesses_reach_the_registers(void) {
   uint64_t value = 0;
 
-  TEST_ASSERT_EQUAL(BUS_ACCESS_FAULT,
+  TEST_ASSERT_EQUAL(BUS_ERROR,
                     plic_read(plic, PLIC_PRIORITY(UART_SOURCE), 1, &value));
-  TEST_ASSERT_EQUAL(BUS_ACCESS_FAULT,
+  TEST_ASSERT_EQUAL(BUS_ERROR,
                     plic_read(plic, PLIC_PRIORITY(UART_SOURCE), 8, &value));
-  TEST_ASSERT_EQUAL(BUS_ACCESS_FAULT,
+  TEST_ASSERT_EQUAL(BUS_ERROR,
                     plic_write(plic, PLIC_PRIORITY(UART_SOURCE) + 2, 4, 1));
 }
 

@@ -1,14 +1,12 @@
-#ifndef RISCV_CPU_H
-#define RISCV_CPU_H
+#ifndef RISCV_CPU_CPU_H
+#define RISCV_CPU_CPU_H
 
-#include "riscv/bus.h"
-#include "riscv/csr.h"
-#include "riscv/privilege.h"
-#include "riscv/registers.h"
+#include "riscv/cpu/csr.h"
+#include "riscv/cpu/privilege.h"
+#include "riscv/cpu/registers.h"
+#include "riscv/system/bus.h"
 
 typedef struct Cpu Cpu;
-
-#define PC_INCREMENT 4
 
 Cpu *cpu_create(Bus *bus);
 Registers *cpu_get_registers(Cpu *cpu);
@@ -23,4 +21,4 @@ void cpu_set_amo_reservation(Cpu *cpu, uxlen_t amo_reservation);
 void cpu_destroy(Cpu *cpu);
 void cpu_reset(Cpu *cpu);
 
-#endif // RISCV_CPU_H
+#endif // RISCV_CPU_CPU_H

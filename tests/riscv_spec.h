@@ -64,6 +64,10 @@
 #define MSTATUS_VS (3u << 9)
 #define MSTATUS_FS (3u << 13)
 #define MSTATUS_XS (3u << 15)
+#define MSTATUS_MPRV (1u << 17)
+#define MSTATUS_SUM (1u << 18)
+#define MSTATUS_MXR (1u << 19)
+#define MSTATUS_TVM (1u << 20)
 #define MSTATUS_TW (1u << 21)
 #define MSTATUS_SD ((uxlen_t)1 << (XLEN - 1))
 #define SSTATUS_SIE MSTATUS_SIE
@@ -187,6 +191,9 @@
 #define CAUSE_ECALL_FROM_U 8
 #define CAUSE_ECALL_FROM_S 9
 #define CAUSE_ECALL_FROM_M 11
+#define CAUSE_FETCH_PAGE_FAULT 12
+#define CAUSE_LOAD_PAGE_FAULT 13
+#define CAUSE_STORE_PAGE_FAULT 15
 
 // Interrupts in mcause and scause: the top bit set, the code below it.
 #define CAUSE_INTERRUPT ((uxlen_t)1 << (XLEN - 1))
@@ -211,5 +218,36 @@
 #define PLIC_ENABLE(context) (0x2000 + 0x80 * (context))
 #define PLIC_THRESHOLD(context) (0x200000 + 0x1000 * (context))
 #define PLIC_CLAIM(context) (PLIC_THRESHOLD(context) + 4)
+
+// satp: MODE selects the translation scheme, PPN is the physical page number
+// of the root page table. SATP_PAGED is the paged MODE already in place.
+#if XLEN == 64
+#define SATP_PAGED ((uxlen_t)8 << 60) // MODE = satp[63:60], 8 = Sv39
+#else
+#define SATP_PAGED ((uxlen_t)1 << 31) // MODE = satp[31], 1 = Sv32
+#endif
+#define PAGE_SIZE 4096
+
+// Page tables. A virtual address is split into a VPN field per level and a
+// 12-bit page offset; each level's VPN indexes one table. A page table entry
+// (PTE) holds flags in bits 7:0 and the PPN from bit 10 up.
+#if XLEN == 64
+#define PT_LEVELS 3 // Sv39: VPN[2] VPN[1] VPN[0]
+#define PTE_SIZE 8
+#define VPN_BITS 9
+#else
+#define PT_LEVELS 2 // Sv32: VPN[1] VPN[0]
+#define PTE_SIZE 4
+#define VPN_BITS 10
+#endif
+#define PTE_PPN_SHIFT 10
+#define PTE_V (1u << 0)
+#define PTE_R (1u << 1)
+#define PTE_W (1u << 2)
+#define PTE_X (1u << 3)
+#define PTE_U (1u << 4)
+#define PTE_G (1u << 5)
+#define PTE_A (1u << 6)
+#define PTE_D (1u << 7)
 
 #endif // TESTS_RISCV_SPEC_H

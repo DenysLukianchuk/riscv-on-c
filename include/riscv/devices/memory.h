@@ -1,7 +1,7 @@
-#ifndef RISCV_MEMORY_H
-#define RISCV_MEMORY_H
+#ifndef RISCV_DEVICES_MEMORY_H
+#define RISCV_DEVICES_MEMORY_H
 
-#include "riscv/device.h"
+#include "riscv/system/device.h"
 #include "riscv/xlen.h"
 
 typedef struct Memory Memory;
@@ -14,4 +14,4 @@ void memory_destroy(Memory *mem);
 
 struct BusDevice memory_bus_device(Memory *mem, uxlen_t base);
 
-#endif // RISCV_MEMORY_H
+#endif // RISCV_DEVICES_MEMORY_H

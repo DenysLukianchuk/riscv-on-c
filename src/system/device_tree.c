@@ -1,11 +1,13 @@
-#include "riscv/device_tree.h"
-#include "riscv/trap_cause.h"
+#include "riscv/system/device_tree.h"
+#include "riscv/cpu/trap_cause.h"
 #include <stddef.h>
 
 #if XLEN == 64
 #define ISA "rv64ima_zicsr_zifencei"
+#define MMU_TYPE "riscv,sv39"
 #else
 #define ISA "rv32ima_zicsr_zifencei"
+#define MMU_TYPE "riscv,sv32"
 #endif
 #define TIMEBASE_FREQUENCY 10000000
 #define FINISHER_POWEROFF 0x5555
@@ -51,6 +53,7 @@ static void describe_cpus(Fdt *fdt) {
   fdt_property_u32(fdt, "reg", 0);
   fdt_property_string(fdt, "compatible", "riscv");
   fdt_property_string(fdt, "riscv,isa", ISA);
+  fdt_property_string(fdt, "mmu-type", MMU_TYPE);
   fdt_property_string(fdt, "status", "okay");
 
   fdt_begin_node(fdt, "interrupt-controller");

@@ -1,5 +1,5 @@
-#ifndef RISCV_BITS_H
-#define RISCV_BITS_H
+#ifndef RISCV_UTIL_BITS_H
+#define RISCV_UTIL_BITS_H
 
 #include "riscv/xlen.h"
 #include <assert.h>
@@ -33,4 +33,4 @@ static inline uxlen_t truncate_to_size(uxlen_t value, uint8_t size) {
   return value & (((uxlen_t)1 << (size * BITS_PER_BYTE)) - 1);
 }
 
-#endif // RISCV_BITS_H
+#endif // RISCV_UTIL_BITS_H

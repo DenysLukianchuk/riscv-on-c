@@ -1,9 +1,9 @@
-#ifndef RISCV_DEVICE_H
-#define RISCV_DEVICE_H
+#ifndef RISCV_SYSTEM_DEVICE_H
+#define RISCV_SYSTEM_DEVICE_H
 
 #include "riscv/xlen.h"
 
-enum BusStatus { BUS_OK = 0, BUS_ACCESS_FAULT = 1 };
+enum BusStatus { BUS_OK = 0, BUS_ERROR = 1 };
 
 typedef enum BusStatus (*BusReadFn)(void *device, uxlen_t offset, unsigned size,
                                     uint64_t *value);
@@ -19,4 +19,4 @@ struct BusDevice {
   BusWriteFn write;
 };
 
-#endif // RISCV_DEVICE_H
+#endif // RISCV_SYSTEM_DEVICE_H

@@ -1,4 +1,4 @@
-#include "riscv/fifo.h"
+#include "riscv/util/fifo.h"
 
 void fifo_init(struct Fifo *fifo, uint8_t *storage, unsigned capacity) {
   *fifo = (struct Fifo){.data = storage, .capacity = capacity};

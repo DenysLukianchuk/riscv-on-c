@@ -1,4 +1,4 @@
-#include "riscv/finisher.h"
+#include "riscv/devices/finisher.h"
 #include "unity.h"
 
 // QEMU's sifive_test device: one write-only word that powers the board off.
@@ -62,11 +62,9 @@ static void test_writes_past_the_register_are_ignored(void) {
 static void test_only_word_accesses_reach_the_register(void) {
   uint64_t value = 0;
 
-  TEST_ASSERT_EQUAL(BUS_ACCESS_FAULT,
-                    finisher_write(finisher, 0, 2, FINISHER_PASS));
-  TEST_ASSERT_EQUAL(BUS_ACCESS_FAULT,
-                    finisher_write(finisher, 0, 8, FINISHER_PASS));
-  TEST_ASSERT_EQUAL(BUS_ACCESS_FAULT, finisher_read(finisher, 0, 1, &value));
+  TEST_ASSERT_EQUAL(BUS_ERROR, finisher_write(finisher, 0, 2, FINISHER_PASS));
+  TEST_ASSERT_EQUAL(BUS_ERROR, finisher_write(finisher, 0, 8, FINISHER_PASS));
+  TEST_ASSERT_EQUAL(BUS_ERROR, finisher_read(finisher, 0, 1, &value));
   TEST_ASSERT_FALSE(finisher_finished(finisher));
 }
 

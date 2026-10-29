@@ -1,8 +1,9 @@
-#include "riscv/bus.h"
-#include "riscv/cpu.h"
-#include "riscv/hart.h"
-#include "riscv/loader.h"
-#include "riscv/memory.h"
+#include "riscv/cpu/cpu.h"
+#include "riscv/cpu/hart.h"
+#include "riscv/devices/memory.h"
+#include "riscv/system/board.h"
+#include "riscv/system/bus.h"
+#include "riscv/system/loader.h"
 
 #include <stdbool.h>
 #include <stdio.h>

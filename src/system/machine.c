@@ -1,12 +1,12 @@
-#include "riscv/machine.h"
-#include "riscv/board.h"
-#include "riscv/clint.h"
-#include "riscv/device_tree.h"
-#include "riscv/finisher.h"
-#include "riscv/hart.h"
-#include "riscv/plic.h"
-#include "riscv/trap_cause.h"
-#include "riscv/uart.h"
+#include "riscv/system/machine.h"
+#include "riscv/cpu/hart.h"
+#include "riscv/cpu/trap_cause.h"
+#include "riscv/devices/clint.h"
+#include "riscv/devices/finisher.h"
+#include "riscv/devices/plic.h"
+#include "riscv/devices/uart.h"
+#include "riscv/system/board.h"
+#include "riscv/system/device_tree.h"
 #include <assert.h>
 #include <stdlib.h>
 

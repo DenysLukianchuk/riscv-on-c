@@ -1,4 +1,4 @@
-#include "riscv/machine.h"
+#include "riscv/system/machine.h"
 #include "riscv_asm.h"
 #include "riscv_spec.h"
 #include "unity.h"
@@ -124,17 +124,14 @@ static void test_uart_is_at_its_address(void) {
 static void test_nothing_else_is_mapped(void) {
   uint64_t value = 0;
 
-  TEST_ASSERT_EQUAL(BUS_ACCESS_FAULT,
-                    bus_read(bus, UART_ADDR + UART_SIZE, 1, &value));
+  TEST_ASSERT_EQUAL(BUS_ERROR, bus_read(bus, UART_ADDR + UART_SIZE, 1, &value));
 
-  TEST_ASSERT_EQUAL(BUS_ACCESS_FAULT,
+  TEST_ASSERT_EQUAL(BUS_ERROR,
                     bus_read(bus, FINISHER_ADDR + FINISHER_SIZE, 4, &value));
-  TEST_ASSERT_EQUAL(BUS_ACCESS_FAULT,
+  TEST_ASSERT_EQUAL(BUS_ERROR,
                     bus_read(bus, CLINT_ADDR + CLINT_SIZE, 4, &value));
-  TEST_ASSERT_EQUAL(BUS_ACCESS_FAULT,
-                    bus_read(bus, PLIC_ADDR + PLIC_SIZE, 4, &value));
-  TEST_ASSERT_EQUAL(BUS_ACCESS_FAULT,
-                    bus_read(bus, RAM_ADDR + RAM_SIZE, 4, &value));
+  TEST_ASSERT_EQUAL(BUS_ERROR, bus_read(bus, PLIC_ADDR + PLIC_SIZE, 4, &value));
+  TEST_ASSERT_EQUAL(BUS_ERROR, bus_read(bus, RAM_ADDR + RAM_SIZE, 4, &value));
 }
 
 // Time: mtime counts the steps the machine has run.

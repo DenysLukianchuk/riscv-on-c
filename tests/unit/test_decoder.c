@@ -1,4 +1,4 @@
-#include "riscv/decoder.h"
+#include "riscv/cpu/decoder.h"
 #include "riscv_asm.h"
 #include "unity.h"
 

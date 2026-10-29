@@ -1,4 +1,4 @@
-#include "riscv/uart.h"
+#include "riscv/devices/uart.h"
 #include "unity.h"
 
 // NS16550A registers (byte offsets) and bits, from the datasheet.
@@ -325,16 +325,16 @@ static void test_received_data_is_reported_before_the_transmitter(void) {
 static void test_only_byte_accesses_reach_the_registers(void) {
   uint64_t value = 0;
 
-  TEST_ASSERT_EQUAL(BUS_ACCESS_FAULT, uart_read(uart, LSR, 4, &value));
-  TEST_ASSERT_EQUAL(BUS_ACCESS_FAULT, uart_write(uart, THR, 2, 'A'));
+  TEST_ASSERT_EQUAL(BUS_ERROR, uart_read(uart, LSR, 4, &value));
+  TEST_ASSERT_EQUAL(BUS_ERROR, uart_write(uart, THR, 2, 'A'));
   TEST_ASSERT_EQUAL_STRING("", sent);
 }
 
-static void test_offsets_past_the_registers_are_access_faults(void) {
+static void test_offsets_past_the_registers_are_bus_errors(void) {
   uint64_t value = 0;
 
-  TEST_ASSERT_EQUAL(BUS_ACCESS_FAULT, uart_read(uart, 8, 1, &value));
-  TEST_ASSERT_EQUAL(BUS_ACCESS_FAULT, uart_write(uart, 0xFF, 1, 0));
+  TEST_ASSERT_EQUAL(BUS_ERROR, uart_read(uart, 8, 1, &value));
+  TEST_ASSERT_EQUAL(BUS_ERROR, uart_write(uart, 0xFF, 1, 0));
 }
 
 int main(void) {
@@ -372,6 +372,6 @@ int main(void) {
   RUN_TEST(test_writing_the_divisor_does_not_fire_the_transmit_interrupt);
   RUN_TEST(test_received_data_is_reported_before_the_transmitter);
   RUN_TEST(test_only_byte_accesses_reach_the_registers);
-  RUN_TEST(test_offsets_past_the_registers_are_access_faults);
+  RUN_TEST(test_offsets_past_the_registers_are_bus_errors);
   return UNITY_END();
 }

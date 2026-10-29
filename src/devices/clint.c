@@ -1,4 +1,4 @@
-#include "riscv/clint.h"
+#include "riscv/devices/clint.h"
 #include <stdlib.h>
 
 #define CLINT_MSIP 0x0000
@@ -42,7 +42,7 @@ static enum BusStatus read_wide(uint64_t reg, uxlen_t at, unsigned size,
   else if (at == HALF_SIZE && size == HALF_SIZE)
     *value = reg >> 32;
   else
-    return BUS_ACCESS_FAULT;
+    return BUS_ERROR;
   return BUS_OK;
 }
 
@@ -55,7 +55,7 @@ static enum BusStatus write_wide(uint64_t *reg, uxlen_t at, unsigned size,
   else if (at == HALF_SIZE && size == HALF_SIZE)
     *reg = (*reg & LOW_HALF) | ((value & LOW_HALF) << 32);
   else
-    return BUS_ACCESS_FAULT;
+    return BUS_ERROR;
   return BUS_OK;
 }
 
@@ -69,7 +69,7 @@ enum BusStatus clint_read(Clint *clint, uxlen_t offset, unsigned size,
     return read_wide(clint->mtimecmp, offset - CLINT_MTIMECMP, size, value);
   if (inside(offset, CLINT_MTIME))
     return read_wide(clint->mtime, offset - CLINT_MTIME, size, value);
-  return BUS_ACCESS_FAULT;
+  return BUS_ERROR;
 }
 
 enum BusStatus clint_write(Clint *clint, uxlen_t offset, unsigned size,
@@ -82,7 +82,7 @@ enum BusStatus clint_write(Clint *clint, uxlen_t offset, unsigned size,
     return write_wide(&clint->mtimecmp, offset - CLINT_MTIMECMP, size, value);
   if (inside(offset, CLINT_MTIME))
     return write_wide(&clint->mtime, offset - CLINT_MTIME, size, value);
-  return BUS_ACCESS_FAULT;
+  return BUS_ERROR;
 }
 
 void clint_tick(Clint *clint, uint64_t ticks) { clint->mtime += ticks; }

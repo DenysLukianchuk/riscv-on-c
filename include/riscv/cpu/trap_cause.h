@@ -1,5 +1,5 @@
-#ifndef RISCV_TRAP_CAUSE_H
-#define RISCV_TRAP_CAUSE_H
+#ifndef RISCV_CPU_TRAP_CAUSE_H
+#define RISCV_CPU_TRAP_CAUSE_H
 
 #include "riscv/xlen.h"
 
@@ -36,4 +36,4 @@ enum Trap {
 // Bit of an interrupt in mip and mie.
 #define INTERRUPT_BIT(code) ((uxlen_t)1 << (code))
 
-#endif // RISCV_TRAP_CAUSE_H
+#endif // RISCV_CPU_TRAP_CAUSE_H

@@ -1,4 +1,4 @@
-#include "riscv/clint.h"
+#include "riscv/devices/clint.h"
 #include "riscv_spec.h"
 #include "unity.h"
 
@@ -126,36 +126,31 @@ static void test_msip_keeps_only_bit_zero(void) {
   TEST_ASSERT_EQUAL_HEX64(1, read_reg(CLINT_MSIP, 4));
 }
 
-// Anything else in the CLINT window is an access fault: other harts'
+// Anything else in the CLINT window is a bus error: other harts'
 // registers, odd sizes and misaligned accesses.
 
 static void test_registers_of_other_harts_do_not_exist(void) {
   uint64_t value = 0;
 
-  TEST_ASSERT_EQUAL(BUS_ACCESS_FAULT,
-                    clint_read(clint, CLINT_MSIP + 4, 4, &value));
-  TEST_ASSERT_EQUAL(BUS_ACCESS_FAULT,
-                    clint_write(clint, CLINT_MTIMECMP + 8, 8, 1));
+  TEST_ASSERT_EQUAL(BUS_ERROR, clint_read(clint, CLINT_MSIP + 4, 4, &value));
+  TEST_ASSERT_EQUAL(BUS_ERROR, clint_write(clint, CLINT_MTIMECMP + 8, 8, 1));
 }
 
 static void test_msip_is_only_reached_with_word_accesses(void) {
   uint64_t value = 0;
 
-  TEST_ASSERT_EQUAL(BUS_ACCESS_FAULT, clint_read(clint, CLINT_MSIP, 1, &value));
-  TEST_ASSERT_EQUAL(BUS_ACCESS_FAULT, clint_read(clint, CLINT_MSIP, 8, &value));
-  TEST_ASSERT_EQUAL(BUS_ACCESS_FAULT, clint_write(clint, CLINT_MSIP, 1, 1));
-  TEST_ASSERT_EQUAL(BUS_ACCESS_FAULT, clint_write(clint, CLINT_MSIP, 8, 1));
+  TEST_ASSERT_EQUAL(BUS_ERROR, clint_read(clint, CLINT_MSIP, 1, &value));
+  TEST_ASSERT_EQUAL(BUS_ERROR, clint_read(clint, CLINT_MSIP, 8, &value));
+  TEST_ASSERT_EQUAL(BUS_ERROR, clint_write(clint, CLINT_MSIP, 1, 1));
+  TEST_ASSERT_EQUAL(BUS_ERROR, clint_write(clint, CLINT_MSIP, 8, 1));
 }
 
 static void test_timer_registers_need_aligned_word_or_doubleword(void) {
   uint64_t value = 0;
 
-  TEST_ASSERT_EQUAL(BUS_ACCESS_FAULT,
-                    clint_read(clint, CLINT_MTIME, 2, &value));
-  TEST_ASSERT_EQUAL(BUS_ACCESS_FAULT,
-                    clint_read(clint, CLINT_MTIME + 4, 8, &value));
-  TEST_ASSERT_EQUAL(BUS_ACCESS_FAULT,
-                    clint_write(clint, CLINT_MTIMECMP + 2, 4, 0));
+  TEST_ASSERT_EQUAL(BUS_ERROR, clint_read(clint, CLINT_MTIME, 2, &value));
+  TEST_ASSERT_EQUAL(BUS_ERROR, clint_read(clint, CLINT_MTIME + 4, 8, &value));
+  TEST_ASSERT_EQUAL(BUS_ERROR, clint_write(clint, CLINT_MTIMECMP + 2, 4, 0));
 }
 
 int main(void) {

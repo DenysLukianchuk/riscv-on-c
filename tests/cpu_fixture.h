@@ -1,19 +1,22 @@
 #ifndef TESTS_CPU_FIXTURE_H
 #define TESTS_CPU_FIXTURE_H
 
-#include "riscv/bus.h"
-#include "riscv/cpu.h"
-#include "riscv/csr.h"
-#include "riscv/decoder.h"
-#include "riscv/execute.h"
-#include "riscv/hart.h"
-#include "riscv/memory.h"
-#include "riscv/registers.h"
+#include "riscv/cpu/cpu.h"
+#include "riscv/cpu/csr.h"
+#include "riscv/cpu/decoder.h"
+#include "riscv/cpu/execute.h"
+#include "riscv/cpu/hart.h"
+#include "riscv/cpu/registers.h"
+#include "riscv/devices/memory.h"
+#include "riscv/system/board.h"
+#include "riscv/system/bus.h"
 #include "riscv_asm.h"
 #include "riscv_spec.h"
 #include "unity.h"
 
+#ifndef TEST_RAM_SIZE
 #define TEST_RAM_SIZE 4096
+#endif
 #define TRAP_HANDLER (RAM_BASE + 0x400)
 #define UNMAPPED_ADDR 0x10
 

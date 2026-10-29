@@ -1,4 +1,4 @@
-#include "riscv/memory.h"
+#include "riscv/devices/memory.h"
 #include "unity.h"
 
 #define MEM_SIZE 1024

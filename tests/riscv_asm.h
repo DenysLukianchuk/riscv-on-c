@@ -119,6 +119,9 @@
 #define EBREAK 0x00100073u
 #define SRET 0x10200073u
 #define WFI 0x10500073u
+// sfence.vma rs1, rs2: funct7 0001001, funct3 000, rd 0, opcode SYSTEM.
+#define SFENCE_VMA(rs1, rs2)                                                   \
+  (0x12000073u | (uint32_t)(rs2) << 20 | (uint32_t)(rs1) << 15)
 #define MRET 0x30200073u
 
 // The all-zeros word is defined to be an illegal instruction.

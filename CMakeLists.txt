@@ -77,9 +77,10 @@ if(BUILD_TESTING)
   endforeach()
 endif()
 
-# Official riscv-tests (base integer, M, A, machine- and supervisor-mode
-# suites, in the physical-memory environment), built with a RISC-V cross
-# compiler when one is available.
+# Official riscv-tests, built with a RISC-V cross compiler when one is
+# available: base integer, M, A, machine- and supervisor-mode suites in the
+# physical-memory environment (p), and the user-level suites again in the
+# virtual-memory environment (v), where they run in U-mode under paging.
 option(RISCV_TESTS "Build and run the official riscv-tests" ON)
 find_program(RISCV_GCC NAMES riscv64-unknown-elf-gcc riscv64-linux-gnu-gcc)
 
@@ -95,6 +96,10 @@ if(BUILD_TESTING AND RISCV_TESTS AND RISCV_GCC)
   else()
     set(RISCV_TESTS_ABI -march=rv32g -mabi=ilp32)
   endif()
+  # The tests are linked at fixed addresses. Some toolchains (Ubuntu's) build
+  # position-independent code by default, which breaks `la sym+offset`.
+  set(RISCV_TESTS_FLAGS ${RISCV_TESTS_ABI} -static -fno-pie -no-pie
+      -mcmodel=medany -fvisibility=hidden -nostdlib -nostartfiles)
 
   add_executable(riscv_tests_runner tests/riscv-tests/runner.c)
   target_link_libraries(riscv_tests_runner PRIVATE riscv_core)
@@ -106,7 +111,8 @@ if(BUILD_TESTING AND RISCV_TESTS AND RISCV_GCC)
       ld-misaligned lh-misaligned lw-misaligned sd-misaligned sh-misaligned
       sw-misaligned ma_addr mcsr sbreak scall shamt zicntr instret_overflow
       csr ma_fetch breakpoint)
-  set(RISCV_SI_TESTS csr ma_fetch sbreak scall)
+  set(RISCV_SI_TESTS csr ma_fetch sbreak scall dirty icache-alias wfi)
+  set(RISCV_V_SUITES ui um ua)
   foreach(suite IN LISTS RISCV_TEST_SUITES)
     file(GLOB RISCV_TEST_SOURCES ${riscv_tests_SOURCE_DIR}/isa/rv${XLEN}${suite}/*.S)
     foreach(test_source IN LISTS RISCV_TEST_SOURCES)
@@ -122,11 +128,34 @@ if(BUILD_TESTING AND RISCV_TESTS AND RISCV_GCC)
       add_custom_command(
         OUTPUT ${test_elf}
         COMMAND ${CMAKE_COMMAND} -E make_directory ${RISCV_TESTS_DIR}
-        COMMAND ${RISCV_GCC} ${RISCV_TESTS_ABI} -static -mcmodel=medany
-                -fvisibility=hidden -nostdlib -nostartfiles
+        COMMAND ${RISCV_GCC} ${RISCV_TESTS_FLAGS}
                 -I${riscv_tests_SOURCE_DIR}/env/p
                 -I${riscv_tests_SOURCE_DIR}/isa/macros/scalar
                 -T${riscv_tests_SOURCE_DIR}/env/p/link.ld
+                ${test_source} -o ${test_elf}
+        DEPENDS ${test_source}
+        VERBATIM)
+      list(APPEND RISCV_TEST_ELFS ${test_elf})
+      add_test(NAME ${test_name} COMMAND riscv_tests_runner ${test_elf})
+
+      if(NOT suite IN_LIST RISCV_V_SUITES)
+        continue()
+      endif()
+      set(test_name rv${XLEN}${suite}-v-${name})
+      set(test_elf ${RISCV_TESTS_DIR}/${test_name})
+      file(GLOB RISCV_V_ENV_SOURCES ${riscv_tests_SOURCE_DIR}/env/v/*.c)
+      # env/v is C: -ffreestanding and tests/riscv-tests/include stand in for
+      # the C library a bare cross compiler lacks.
+      add_custom_command(
+        OUTPUT ${test_elf}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${RISCV_TESTS_DIR}
+        COMMAND ${RISCV_GCC} ${RISCV_TESTS_FLAGS} -ffreestanding -std=gnu99 -O2
+                -DENTROPY=0x1234567 -Wl,--no-warn-rwx-segments
+                -I${CMAKE_SOURCE_DIR}/tests/riscv-tests/include
+                -I${riscv_tests_SOURCE_DIR}/env/v
+                -I${riscv_tests_SOURCE_DIR}/isa/macros/scalar
+                -T${riscv_tests_SOURCE_DIR}/env/v/link.ld
+                ${riscv_tests_SOURCE_DIR}/env/v/entry.S ${RISCV_V_ENV_SOURCES}
                 ${test_source} -o ${test_elf}
         DEPENDS ${test_source}
         VERBATIM)

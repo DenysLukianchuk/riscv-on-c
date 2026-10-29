@@ -1,4 +1,4 @@
-#include "riscv/fifo.h"
+#include "riscv/util/fifo.h"
 #include "unity.h"
 
 // Small on purpose: the size is the owner's choice, not the fifo's.

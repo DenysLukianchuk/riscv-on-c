@@ -1,5 +1,5 @@
-#include "riscv/trap.h"
-#include "riscv/bits.h"
+#include "riscv/cpu/trap.h"
+#include "riscv/util/bits.h"
 
 struct TrapMode {
   uint16_t epc, cause, tval, tvec;
@@ -102,6 +102,9 @@ uxlen_t cpu_return_from_trap(Cpu *cpu, enum Privilege xret) {
   const struct TrapMode *mode = xret == PRIV_M ? &MODE_M : &MODE_S;
   enum Privilege to;
   uxlen_t pc = trap_leave(cpu_get_csr(cpu), mode, &to);
+  uxlen_t mstatus = csr_get(cpu_get_csr(cpu), CSR_REG_MSTATUS);
+  if (to != PRIV_M)
+    csr_set(cpu_get_csr(cpu), CSR_REG_MSTATUS, mstatus & ~MSTATUS_MPRV_BIT);
   cpu_set_privilege(cpu, to);
   return pc;
 }

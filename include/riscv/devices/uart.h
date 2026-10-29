@@ -1,7 +1,7 @@
-#ifndef RISCV_UART_H
-#define RISCV_UART_H
+#ifndef RISCV_DEVICES_UART_H
+#define RISCV_DEVICES_UART_H
 
-#include "riscv/device.h"
+#include "riscv/system/device.h"
 #include "riscv/xlen.h"
 #include <stdbool.h>
 
@@ -18,4 +18,4 @@ void uart_receive(Uart *uart, uint8_t byte);
 bool uart_interrupt_pending(const Uart *uart);
 struct BusDevice uart_bus_device(Uart *uart, uxlen_t base);
 
-#endif // RISCV_UART_H
+#endif // RISCV_DEVICES_UART_H

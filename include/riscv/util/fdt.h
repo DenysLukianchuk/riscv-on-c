@@ -1,5 +1,5 @@
-#ifndef RISCV_FDT_H
-#define RISCV_FDT_H
+#ifndef RISCV_UTIL_FDT_H
+#define RISCV_UTIL_FDT_H
 
 #include <stdint.h>
 
@@ -17,4 +17,4 @@ void fdt_property_cells(Fdt *fdt, const char *name, const uint32_t *cells,
                         uint32_t count);
 const uint8_t *fdt_finish(Fdt *fdt, uint32_t *size);
 
-#endif // RISCV_FDT_H
+#endif // RISCV_UTIL_FDT_H

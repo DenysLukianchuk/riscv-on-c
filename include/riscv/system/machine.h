@@ -1,10 +1,10 @@
-#ifndef RISCV_MACHINE_H
-#define RISCV_MACHINE_H
+#ifndef RISCV_SYSTEM_MACHINE_H
+#define RISCV_SYSTEM_MACHINE_H
 
-#include "riscv/bus.h"
-#include "riscv/cpu.h"
-#include "riscv/memory.h"
-#include "riscv/uart.h"
+#include "riscv/cpu/cpu.h"
+#include "riscv/devices/memory.h"
+#include "riscv/devices/uart.h"
+#include "riscv/system/bus.h"
 
 typedef struct Machine Machine;
 
@@ -23,4 +23,4 @@ bool machine_finished(Machine *machine);
 int machine_exit_code(Machine *machine);
 const uint8_t *machine_device_tree(Machine *machine, uint32_t *size);
 
-#endif // RISCV_MACHINE_H
+#endif // RISCV_SYSTEM_MACHINE_H

@@ -1,5 +1,5 @@
-#ifndef RISCV_REGISTERS_H
-#define RISCV_REGISTERS_H
+#ifndef RISCV_CPU_REGISTERS_H
+#define RISCV_CPU_REGISTERS_H
 
 #include "riscv/xlen.h"
 
@@ -19,4 +19,4 @@ uxlen_t registers_read(Registers *regs, uint8_t index);
 
 void registers_reset(Registers *regs);
 
-#endif // RISCV_REGISTERS_H
+#endif // RISCV_CPU_REGISTERS_H

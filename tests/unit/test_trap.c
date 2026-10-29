@@ -1,5 +1,5 @@
 #include "cpu_fixture.h"
-#include "riscv/trap.h"
+#include "riscv/cpu/trap.h"
 
 #define FAULTING_PC 0x80000010
 

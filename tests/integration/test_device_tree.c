@@ -1,5 +1,5 @@
 #include "dt_reader.h"
-#include "riscv/machine.h"
+#include "riscv/system/machine.h"
 #include "unity.h"
 
 // The board describes itself to the guest with a device tree. Node names and
@@ -7,8 +7,10 @@
 #define RAM_SIZE 0x10000
 #if XLEN == 64
 #define ISA "rv64ima_zicsr_zifencei"
+#define MMU_TYPE "riscv,sv39"
 #else
 #define ISA "rv32ima_zicsr_zifencei"
+#define MMU_TYPE "riscv,sv32"
 #endif
 
 static Machine *machine;
@@ -92,6 +94,12 @@ static void test_cpu_node_describes_hart_zero(void) {
   TEST_ASSERT_EQUAL_STRING("riscv", string("/cpus/cpu@0", "compatible"));
   TEST_ASSERT_EQUAL_STRING(ISA, string("/cpus/cpu@0", "riscv,isa"));
   TEST_ASSERT_EQUAL_STRING("okay", string("/cpus/cpu@0", "status"));
+}
+
+// The paging scheme. OpenSBI disables a hart whose node has no mmu-type, as
+// one Linux cannot run on.
+static void test_cpu_node_names_its_mmu(void) {
+  TEST_ASSERT_EQUAL_STRING(MMU_TYPE, string("/cpus/cpu@0", "mmu-type"));
 }
 
 // The console: /chosen points at the UART.
@@ -203,6 +211,7 @@ int main(void) {
   RUN_TEST(test_memory_node_covers_the_ram);
   RUN_TEST(test_cpus_node_counts_harts_by_id);
   RUN_TEST(test_cpu_node_describes_hart_zero);
+  RUN_TEST(test_cpu_node_names_its_mmu);
   RUN_TEST(test_chosen_points_stdout_at_the_uart);
   RUN_TEST(test_hart_has_its_interrupt_controller);
   RUN_TEST(test_soc_is_a_simple_bus);

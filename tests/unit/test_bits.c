@@ -1,4 +1,4 @@
-#include "riscv/bits.h"
+#include "riscv/util/bits.h"
 #include "unity.h"
 
 void setUp(void) {}

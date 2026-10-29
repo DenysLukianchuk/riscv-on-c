@@ -1,5 +1,5 @@
-#include "riscv/loader.h"
-#include "riscv/machine.h"
+#include "riscv/system/loader.h"
+#include "riscv/system/machine.h"
 #include <stdio.h>
 #include <stdlib.h>
 
