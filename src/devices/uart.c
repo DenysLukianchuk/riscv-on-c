@@ -168,3 +168,5 @@ struct BusDevice uart_bus_device(Uart *uart, uxlen_t base) {
                             .read = bus_read,
                             .write = bus_write};
 }
+
+bool uart_can_receive(const Uart *uart) { return !fifo_full(&uart->rx); }

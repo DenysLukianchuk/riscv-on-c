@@ -1,0 +1,19 @@
+# Buildroot configuration for the shell image: busybox and musl, built for
+# rv64imac without F and D, which is what the emulator implements. Used by
+# scripts/build-linux.sh shell.
+BR2_riscv=y
+BR2_riscv_custom=y
+BR2_RISCV_ISA_RVM=y
+BR2_RISCV_ISA_RVA=y
+# BR2_RISCV_ISA_RVF is not set
+# BR2_RISCV_ISA_RVD is not set
+BR2_RISCV_ISA_RVC=y
+BR2_RISCV_64=y
+BR2_RISCV_ABI_LP64=y
+BR2_TOOLCHAIN_BUILDROOT_MUSL=y
+BR2_KERNEL_HEADERS_6_18=y
+BR2_TARGET_GENERIC_HOSTNAME="riscv-on-c"
+BR2_TARGET_GENERIC_ISSUE="Welcome to Linux on riscv-on-c"
+BR2_TARGET_GENERIC_GETTY_PORT="console"
+BR2_TARGET_ROOTFS_CPIO=y
+# BR2_TARGET_ROOTFS_TAR is not set

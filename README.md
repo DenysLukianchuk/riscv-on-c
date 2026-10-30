@@ -2,20 +2,23 @@
 
 [![CI](https://github.com/DenysLukianchuk/riscv-on-c/actions/workflows/ci.yml/badge.svg)](https://github.com/DenysLukianchuk/riscv-on-c/actions/workflows/ci.yml)
 
-A RISC-V emulator in C (RV32 and RV64), built as a learning project: the aim
+A RISC-V emulator in C (RV32 and RV64). This is a learning project: the aim
 is to understand how a processor works by building one. The emulator follows
 the RISC-V specifications rather than taking emulator shortcuts.
 
-It is written with test-driven development (TDD). Each feature starts as a
-failing test written from the specifications, then gets the smallest code
-that makes it pass, then a refactoring with the tests kept green. The unit
-tests take their architectural numbers (CSR addresses, bit positions, trap
-causes) from their own header rather than from the emulator's, so a wrong
-constant in the emulator fails a test instead of agreeing with it.
+It is written with test-driven development (TDD). The tests were written with
+[Claude Code](https://claude.com/claude-code), from the specifications; the
+emulator was then written against them. Each feature starts as a failing
+test, then gets the smallest code that makes it pass, then a refactoring with
+the tests kept green. The unit tests take their architectural numbers (CSR
+addresses, bit positions, trap causes) from their own header rather than from
+the emulator's, so a wrong constant in the emulator fails a test instead of
+agreeing with it.
 
 ## Status
 
-- RV32I / RV64I base ISA, M and A (LR/SC, AMOs) extensions
+- RV32I / RV64I base ISA, M, A (LR/SC, AMOs) and C (compressed
+  instructions) extensions
 - Zicsr; `cycle` / `instret` counters, 64-bit on RV32
 - Privilege modes M, S and U: traps, delegation (`medeleg`, `mideleg`),
   `mret` / `sret`, `ecall` / `ebreak` / `wfi`, `misa`, `mcounteren` /
@@ -41,16 +44,26 @@ constant in the emulator fails a test instead of agreeing with it.
 Boots [OpenSBI](https://github.com/riscv-software-src/opensbi) v1.9: the
 banner, its test payload in S-mode and a clean power-off.
 
-Boots Linux 6.18 to user space: OpenSBI hands over to the kernel, which
-brings up paging, the timer, the PLIC and the 16550 console, then runs an
-`/init` from its initramfs that prints a greeting in U-mode and powers the
-board off. There is no shell yet.
+Boots Linux 6.18 to a busybox shell in about seven seconds: OpenSBI hands
+over to the kernel, which brings up paging, the timer, the PLIC and the
+16550 console, then busybox's init starts its services and a login on the
+console. Keys typed at the host terminal reach the guest through the UART.
+
+```
+Welcome to Linux on riscv-on-c
+riscv-on-c login: root
+# uname -a
+Linux riscv-on-c 6.18.59 #1 riscv64 GNU/Linux
+# cat /proc/cpuinfo
+processor	: 0
+hart		: 0
+isa		: rv64imac_zicntr_zicsr_zifencei_zaamo_zalrsc_zca_svade
+mmu		: sv39
+```
 
 Passes the official [riscv-tests](https://github.com/riscv-software-src/riscv-tests)
-`ui`, `um` and `ua` suites on both XLENs, in physical memory and again in
+`ui`, `um`, `ua` and `uc` suites on both XLENs, in physical memory and again in
 U-mode under paging, along with 16 of 18 `mi` and all 7 `si` tests.
-
-Next: a Linux shell.
 
 ## Build and test
 
@@ -70,84 +83,48 @@ Build OpenSBI for the emulator's ISA, linked at the start of RAM:
 git clone --branch v1.9 https://github.com/riscv-software-src/opensbi.git
 cd opensbi
 make CROSS_COMPILE=riscv64-linux-gnu- PLATFORM=generic \
-     PLATFORM_RISCV_ISA=rv64ima_zicsr_zifencei PLATFORM_RISCV_ABI=lp64 \
+     PLATFORM_RISCV_ISA=rv64imac_zicsr_zifencei PLATFORM_RISCV_ABI=lp64 \
      FW_TEXT_START=0x80000000
 ```
 
-Then run its firmware with the test payload on an emulator built without
-sanitizers:
+Then run its firmware with the test payload on an optimised build of the
+emulator:
 
 ```sh
-cmake --preset rv64-nosan && cmake --build --preset rv64-nosan
-build/rv64-nosan/riscv path/to/opensbi/build/platform/generic/firmware/fw_payload.elf
+cmake --preset rv64-release && cmake --build --preset rv64-release
+build/rv64-release/riscv path/to/opensbi/build/platform/generic/firmware/fw_payload.elf
 ```
 
 ## Running Linux
 
-The kernel is built without compressed and floating-point instructions,
-which the emulator does not implement yet, and travels inside OpenSBI's
-`fw_payload` image, so the emulator still loads a single ELF.
+`scripts/build-linux.sh` builds a Linux image for the emulator. The kernel
+(6.18, from `tinyconfig` plus what the board and user space need) travels
+inside OpenSBI's `fw_payload`, so the emulator loads a single ELF, and its
+user space sits in an initramfs. Everything is built for rv64imac, without
+floating-point instructions. The script downloads pinned
+versions of its sources and needs `riscv64-linux-gnu-gcc`, `flex`, `bison`
+and `bc`; the shell image also needs what Buildroot needs, such as `g++` and
+a few Perl modules.
 
-A first `/init`, built against nolibc, the small C library that ships with
-the kernel sources:
+There are two images:
 
-```sh
-# in the Linux source tree (6.18)
-mkdir -p ../nolibc
-make -C tools/include/nolibc ARCH=riscv headers_standalone OUTPUT=$PWD/../nolibc/
-make ARCH=riscv mrproper   # the step above leaves files in the tree
-
-cat > ../init.c <<'EOF'
-int main(void)
-{
-	printf("\nHello from user space on riscv-on-c!\n");
-	reboot(LINUX_REBOOT_CMD_POWER_OFF);
-	return 0;
-}
-EOF
-riscv64-linux-gnu-gcc -Os -static -nostdlib -fno-asynchronous-unwind-tables \
-    -march=rv64ima_zicsr_zifencei -mabi=lp64 \
-    -include ../nolibc/sysroot/include/nolibc.h -I../nolibc/sysroot/include \
-    ../init.c -lgcc -o ../init.elf
-
-cat > ../initramfs.list <<EOF
-dir /dev 755 0 0
-nod /dev/console 600 0 0 c 5 1
-file /init $PWD/../init.elf 755 0 0
-EOF
-```
-
-A minimal kernel for the board: `tinyconfig` plus the console, the PLIC and
-the initramfs. EFI has to go, as it forces compressed instructions on.
+- `shell`: busybox and musl from [Buildroot](https://buildroot.org), with a
+  login on the console. About ten minutes the first time, as Buildroot builds
+  its own compiler.
+- `hello`: a `/init` built against nolibc, the small C library in the kernel
+  sources, that greets from U-mode and powers the board off. About a minute.
 
 ```sh
-K="make ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- O=../build"
-$K tinyconfig
-scripts/config --file ../build/.config \
-    -e 64BIT -e NONPORTABLE -d EFI -d RISCV_ISA_C -d FPU -d RISCV_ISA_V \
-    -e PRINTK -e PRINTK_TIME -e TTY -e SERIAL_8250 -e SERIAL_8250_CONSOLE \
-    -e SERIAL_OF_PLATFORM -e SERIAL_EARLYCON -e SERIAL_EARLYCON_RISCV_SBI \
-    -e HVC_RISCV_SBI -e RISCV_SBI_V01 -e SIFIVE_PLIC -e BINFMT_ELF \
-    -e BLK_DEV_INITRD --set-str INITRAMFS_SOURCE $PWD/../initramfs.list \
-    --set-str CMDLINE "earlycon=sbi console=ttyS0"
-$K olddefconfig
-$K -j$(nproc) Image
+cmake --preset rv64-release && cmake --build --preset rv64-release
+scripts/build-linux.sh shell            # result in build/linux-shell
+build/rv64-release/riscv build/linux-shell/fw_payload.elf
 ```
 
-OpenSBI with the kernel as its payload, then the run:
+Log in as `root` without a password. The terminal is in raw mode while the
+emulator runs, so Ctrl-C goes to the guest; press Ctrl-A then x to quit the
+emulator.
 
-```sh
-# in the OpenSBI tree
-make CROSS_COMPILE=riscv64-linux-gnu- PLATFORM=generic \
-     PLATFORM_RISCV_ISA=rv64ima_zicsr_zifencei PLATFORM_RISCV_ABI=lp64 \
-     FW_TEXT_START=0x80000000 \
-     FW_PAYLOAD_PATH=path/to/build/arch/riscv/boot/Image O=build-linux
-
-build/rv64-nosan/riscv path/to/opensbi/build-linux/platform/generic/firmware/fw_payload.elf
-```
-
-The boot takes a few seconds and ends with the greeting and
-`reboot: Power down`.
+To skip the build, take `riscv` and `fw_payload.elf` from a release.
 
 ## License
 

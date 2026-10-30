@@ -35,8 +35,10 @@
 #define MCYCLEH 0xB80
 #define MINSTRETH 0xB82
 #define CYCLE 0xC00
+#define TIME 0xC01
 #define INSTRET 0xC02
 #define CYCLEH 0xC80
+#define TIMEH 0xC81
 #define INSTRETH 0xC82
 #define MVENDORID 0xF11
 #define MARCHID 0xF12
@@ -96,6 +98,7 @@
 
 // mcounteren and scounteren bits.
 #define COUNTEREN_CY (1u << 0)
+#define COUNTEREN_TM (1u << 1)
 #define COUNTEREN_IR (1u << 2)
 
 // Trigger module (Sdtrig 1.0). tdata1 fields shared by every trigger type:

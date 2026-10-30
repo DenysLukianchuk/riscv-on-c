@@ -1,5 +1,10 @@
 #include "riscv/cpu/decoder.h"
 #include "riscv/util/bits.h"
+#include <stdbool.h>
+
+#define LENGTH_BITS_HI 1
+#define LENGTH_BITS_LO 0
+#define LENGTH_BITS_32 3
 
 static inline void extract_rd(struct Instruction *inst, uint32_t raw) {
   switch (inst->opcode) {
@@ -101,6 +106,13 @@ static inline void extract_imm(struct Instruction *inst, uint32_t raw) {
 struct Instruction instruction_decode(uint32_t raw) {
   struct Instruction inst;
   inst.raw = raw;
+
+  bool is_compressed = instruction_is_compressed(raw);
+  if (is_compressed) {
+    inst.raw &= 0xFFFF;
+    raw = instruction_expand(raw);
+  }
+
   inst.opcode = bits(raw, OPCODE_HI, OPCODE_LO);
   extract_rd(&inst, raw);
   extract_funct3(&inst, raw);
@@ -108,5 +120,11 @@ struct Instruction instruction_decode(uint32_t raw) {
   extract_rs2(&inst, raw);
   extract_funct7(&inst, raw);
   extract_imm(&inst, raw);
+  inst.length =
+      is_compressed ? COMPRESSED_WIDTH_BYTES : INSTRUCTION_WIDTH_BYTES;
   return inst;
+}
+
+bool instruction_is_compressed(uint32_t instruction) {
+  return bits(instruction, LENGTH_BITS_HI, LENGTH_BITS_LO) != LENGTH_BITS_32;
 }

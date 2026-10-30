@@ -22,5 +22,6 @@ void machine_console_input(Machine *machine, uint8_t byte);
 bool machine_finished(Machine *machine);
 int machine_exit_code(Machine *machine);
 const uint8_t *machine_device_tree(Machine *machine, uint32_t *size);
+bool machine_console_ready(Machine *machine);
 
 #endif // RISCV_SYSTEM_MACHINE_H

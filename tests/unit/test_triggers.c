@@ -415,6 +415,28 @@ static void test_load_breakpoint_stops_before_the_load(void) {
   TEST_ASSERT_EQUAL_HEX64(CAUSE_BREAKPOINT, read_csr(MCAUSE));
 }
 
+// 0 is an ordinary compare value: a data trigger looking for a load of 0.
+static void test_trigger_comparing_against_zero_fires(void) {
+  write_csr(MSTATUS, MSTATUS_MIE);
+  set_trigger(0, LOAD_BREAKPOINT | MCONTROL_SELECT, 0);
+
+  step_access_over(LW(1, 0, 2), DATA_ADDR, PRIV_M, 0);
+
+  TEST_ASSERT_EQUAL_HEX64(CAUSE_BREAKPOINT, read_csr(MCAUSE));
+}
+
+// Writing another trigger's registers leaves this one armed.
+static void test_writing_another_trigger_keeps_this_one(void) {
+  write_csr(MSTATUS, MSTATUS_MIE);
+  set_trigger(0, LOAD_BREAKPOINT, DATA_ADDR);
+  select_trigger(1);
+  write_csr(TDATA2, 0);
+
+  step_access(LW(1, 0, 2), DATA_ADDR, PRIV_M);
+
+  TEST_ASSERT_EQUAL_HEX64(CAUSE_BREAKPOINT, read_csr(MCAUSE));
+}
+
 static void test_load_breakpoint_reports_the_pc_and_the_data_address(void) {
   write_csr(MSTATUS, MSTATUS_MIE);
   set_trigger(0, LOAD_BREAKPOINT, DATA_ADDR);
@@ -1292,6 +1314,23 @@ static void test_execute_data_trigger_fires_on_the_instruction(void) {
   TEST_ASSERT_EQUAL_HEX64(BREAKPOINT_PC, read_csr(MTVAL));
 }
 
+// A compressed instruction is 16 bits: the halfword after it belongs to the
+// next instruction and is not part of the data compared.
+#define C_LI_RA_10 0x40a9 // c.li ra, 10
+#define NEXT_HALFWORD 0xABCDu
+
+static void test_execute_data_trigger_compares_16_bits_of_compressed(void) {
+  static const uint32_t program[] = {NEXT_HALFWORD << 16 | C_LI_RA_10};
+  load_program(program, 1);
+  set_reg(1, 0);
+  write_csr(MTVEC, TRAP_HANDLER);
+  set_data_trigger(0, EXECUTE_DATA_BREAKPOINT, C_LI_RA_10);
+
+  cpu_step(cpu);
+
+  TEST_ASSERT_STOPPED_IN_MACHINE_MODE();
+}
+
 static void test_execute_data_trigger_ignores_other_instructions(void) {
   set_data_trigger(0, EXECUTE_DATA_BREAKPOINT, LI(1, MARKER + 1));
 
@@ -1960,6 +1999,8 @@ int main(void) {
   RUN_TEST(test_delegated_breakpoint_fires_in_supervisor_mode_with_sie_set);
   RUN_TEST(test_delegated_breakpoint_fires_in_user_mode_regardless_of_sie);
   RUN_TEST(test_load_breakpoint_stops_before_the_load);
+  RUN_TEST(test_trigger_comparing_against_zero_fires);
+  RUN_TEST(test_writing_another_trigger_keeps_this_one);
   RUN_TEST(test_load_breakpoint_reports_the_pc_and_the_data_address);
   RUN_TEST(test_load_breakpoint_sets_hit);
   RUN_TEST(test_stopped_load_does_not_retire);
@@ -2048,6 +2089,7 @@ int main(void) {
   RUN_TEST(test_load_data_trigger_does_not_hide_a_load_access_fault);
   RUN_TEST(test_match_modes_apply_to_data);
   RUN_TEST(test_execute_data_trigger_fires_on_the_instruction);
+  RUN_TEST(test_execute_data_trigger_compares_16_bits_of_compressed);
   RUN_TEST(test_execute_data_trigger_ignores_other_instructions);
   RUN_TEST(test_execute_data_trigger_ignores_the_pc);
   RUN_TEST(test_lr_data_trigger_fires_on_the_value_read);

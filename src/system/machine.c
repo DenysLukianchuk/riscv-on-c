@@ -102,6 +102,7 @@ void machine_step(Machine *machine) {
     return;
   Csr *csr = cpu_get_csr(machine->cpu);
   csr_set_interrupt_pending(csr, MTIP, clint_timer_pending(machine->clint));
+  csr_set_time(csr, clint_mtime(machine->clint));
   csr_set_interrupt_pending(csr, MSIP, clint_software_pending(machine->clint));
   plic_set_source(machine->plic, UART_IRQ,
                   uart_interrupt_pending(machine->uart));
@@ -126,4 +127,8 @@ int machine_exit_code(Machine *machine) {
 
 const uint8_t *machine_device_tree(Machine *machine, uint32_t *size) {
   return fdt_finish(machine->fdt, size);
+}
+
+bool machine_console_ready(Machine *machine) {
+  return uart_can_receive(machine->uart);
 }

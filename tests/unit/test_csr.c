@@ -159,8 +159,8 @@ static void test_mie_keeps_only_implemented_interrupt_enables(void) {
 }
 
 #define IMPLEMENTED_MISA                                                       \
-  (MISA_MXL_FIELD | MISA_EXT('A') | MISA_EXT('I') | MISA_EXT('M') |            \
-   MISA_EXT('S') | MISA_EXT('U'))
+  (MISA_MXL_FIELD | MISA_EXT('A') | MISA_EXT('C') | MISA_EXT('I') |            \
+   MISA_EXT('M') | MISA_EXT('S') | MISA_EXT('U'))
 
 static void test_misa_reports_xlen_and_implemented_extensions(void) {
   uxlen_t value = 0;

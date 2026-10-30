@@ -201,4 +201,9 @@ enum Trap mmu_fault_cause(enum MmuResult mmu_result,
     break;
   }
   assert(0 && "Unhandled MMU result");
+  return TRAP_ILLEGAL_INSTRUCTION; // unreachable; keeps release builds defined
+}
+
+unsigned mmu_bytes_to_page_end(uxlen_t vaddr) {
+  return PAGE_SIZE - (vaddr & PAGE_OFFSET_MASK);
 }

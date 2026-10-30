@@ -105,14 +105,14 @@ if(BUILD_TESTING AND RISCV_TESTS AND RISCV_GCC)
   target_link_libraries(riscv_tests_runner PRIVATE riscv_core)
 
   set(RISCV_TESTS_DIR ${CMAKE_BINARY_DIR}/riscv-tests)
-  set(RISCV_TEST_SUITES ui um ua mi si)
+  set(RISCV_TEST_SUITES ui um ua uc mi si)
   # Privileged tests are enabled one by one as the features they need land.
   set(RISCV_MI_TESTS
       ld-misaligned lh-misaligned lw-misaligned sd-misaligned sh-misaligned
       sw-misaligned ma_addr mcsr sbreak scall shamt zicntr instret_overflow
       csr ma_fetch breakpoint)
   set(RISCV_SI_TESTS csr ma_fetch sbreak scall dirty icache-alias wfi)
-  set(RISCV_V_SUITES ui um ua)
+  set(RISCV_V_SUITES ui um ua uc)
   foreach(suite IN LISTS RISCV_TEST_SUITES)
     file(GLOB RISCV_TEST_SOURCES ${riscv_tests_SOURCE_DIR}/isa/rv${XLEN}${suite}/*.S)
     foreach(test_source IN LISTS RISCV_TEST_SOURCES)

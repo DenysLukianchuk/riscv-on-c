@@ -144,6 +144,19 @@ static void test_mtime_advances_once_per_step(void) {
   TEST_ASSERT_EQUAL_HEX64(3, clint(CLINT_MTIME));
 }
 
+// The time CSR shows mtime as it is when the step that reads it starts.
+static void test_time_csr_follows_mtime(void) {
+  static const uint32_t program[] = {NOP, NOP, NOP, CSRR(1, TIME)};
+  load(program, 4);
+  run(3);
+  uint64_t mtime = clint(CLINT_MTIME);
+
+  run(1);
+
+  TEST_ASSERT_EQUAL_HEX64((uxlen_t)mtime,
+                          registers_read(cpu_get_registers(cpu), 1));
+}
+
 // Wires: the CLINT drives MTIP and MSIP in mip. A step sees the lines as they
 // are when it starts.
 
@@ -243,6 +256,16 @@ static void test_program_prints_through_the_uart(void) {
   run(6);
 
   TEST_ASSERT_EQUAL_STRING("Hi", console);
+}
+
+// The host keeps typed bytes back while the UART has no room for them.
+static void test_console_is_ready_until_the_uart_fills_up(void) {
+  TEST_ASSERT_TRUE(machine_console_ready(machine));
+
+  for (int i = 0; i < 16; i++)
+    machine_console_input(machine, 'a');
+
+  TEST_ASSERT_FALSE(machine_console_ready(machine));
 }
 
 static void test_console_input_reaches_the_uart(void) {
@@ -450,6 +473,7 @@ int main(void) {
   RUN_TEST(test_program_receives_a_timer_interrupt);
   RUN_TEST(test_program_prints_through_the_uart);
   RUN_TEST(test_console_input_reaches_the_uart);
+  RUN_TEST(test_console_is_ready_until_the_uart_fills_up);
   RUN_TEST(test_uart_raises_meip_through_the_plic);
   RUN_TEST(test_uart_raises_seip_through_the_plic);
   RUN_TEST(test_meip_drops_once_the_byte_is_read);
@@ -462,5 +486,6 @@ int main(void) {
   RUN_TEST(test_program_powers_off_with_pass);
   RUN_TEST(test_program_powers_off_with_a_failure_code);
   RUN_TEST(test_board_that_is_off_runs_nothing);
+  RUN_TEST(test_time_csr_follows_mtime);
   return UNITY_END();
 }

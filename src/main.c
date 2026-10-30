@@ -1,9 +1,15 @@
+#include "riscv/host/console.h"
+#include "riscv/host/terminal.h"
 #include "riscv/system/loader.h"
 #include "riscv/system/machine.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define RAM_SIZE (128u << 20)
+// Steps between looks at the keyboard: a system call per instruction would
+// slow the emulator down several times over.
+#define INPUT_INTERVAL 4096
 
 static uint8_t *read_file(const char *path, size_t *size) {
   FILE *file = fopen(path, "rb");
@@ -26,6 +32,32 @@ static void print_to_terminal(void *context, uint8_t byte) {
   (void)context;
   putchar(byte);
   fflush(stdout);
+}
+
+// Runs the board until it powers off or Ctrl-A x asks to quit. Keys wait in
+// `keys` until the UART has room for them; new ones are read only once all
+// of the old ones are in.
+static bool run(Machine *machine) {
+  struct Terminal terminal;
+  terminal_open(&terminal);
+  struct ConsoleEscape escape = {0};
+  bool quit = false;
+  uint8_t keys[64];
+  size_t pending = 0;
+
+  for (unsigned long step = 0; !machine_finished(machine) && !quit; step++) {
+    if (step % INPUT_INTERVAL == 0) {
+      if (pending == 0)
+        pending = terminal_read(&terminal, keys, sizeof keys);
+      size_t used = console_feed(&escape, machine, keys, pending, &quit);
+      memmove(keys, keys + used, pending - used);
+      pending -= used;
+    }
+    machine_step(machine);
+  }
+
+  terminal_close(&terminal);
+  return quit;
 }
 
 int main(int argc, char *argv[]) {
@@ -53,10 +85,9 @@ int main(int argc, char *argv[]) {
   }
 
   machine_boot(machine, entry);
-  while (!machine_finished(machine))
-    machine_step(machine);
+  bool quit = run(machine);
 
-  int exit_code = machine_exit_code(machine);
+  int exit_code = quit ? EXIT_SUCCESS : machine_exit_code(machine);
   machine_destroy(machine);
   free(image);
   return exit_code;

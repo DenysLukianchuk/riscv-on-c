@@ -17,5 +17,6 @@ enum BusStatus uart_write(Uart *uart, uxlen_t offset, unsigned size,
 void uart_receive(Uart *uart, uint8_t byte);
 bool uart_interrupt_pending(const Uart *uart);
 struct BusDevice uart_bus_device(Uart *uart, uxlen_t base);
+bool uart_can_receive(const Uart *uart);
 
 #endif // RISCV_DEVICES_UART_H

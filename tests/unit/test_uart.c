@@ -123,6 +123,37 @@ static void test_reading_rbr_with_nothing_received_gives_zero(void) {
   TEST_ASSERT_BITS(LSR_DR, 0, read_reg(LSR));
 }
 
+// The 16550A receive fifo holds 16 bytes; a byte arriving when it is full is
+// lost. Whoever feeds the UART can ask first and hold the byte back.
+#define RX_FIFO_BYTES 16
+
+static void fill_receive_fifo(void) {
+  for (int i = 0; i < RX_FIFO_BYTES; i++)
+    uart_receive(uart, 'a' + i);
+}
+
+static void test_uart_can_receive_while_the_fifo_has_room(void) {
+  TEST_ASSERT_TRUE(uart_can_receive(uart));
+
+  uart_receive(uart, 'x');
+
+  TEST_ASSERT_TRUE(uart_can_receive(uart));
+}
+
+static void test_uart_cannot_receive_with_the_fifo_full(void) {
+  fill_receive_fifo();
+
+  TEST_ASSERT_FALSE(uart_can_receive(uart));
+}
+
+static void test_reading_a_byte_makes_room_again(void) {
+  fill_receive_fifo();
+
+  read_reg(RBR);
+
+  TEST_ASSERT_TRUE(uart_can_receive(uart));
+}
+
 // LCR.DLAB turns offsets 0 and 1 into the baud-rate divisor, which firmware
 // programs at start-up. It only matters to real wires, so it is just stored.
 
@@ -348,6 +379,9 @@ int main(void) {
   RUN_TEST(test_received_bytes_are_read_in_order);
   RUN_TEST(test_rbr_does_not_echo_the_last_byte_sent);
   RUN_TEST(test_reading_rbr_with_nothing_received_gives_zero);
+  RUN_TEST(test_uart_can_receive_while_the_fifo_has_room);
+  RUN_TEST(test_uart_cannot_receive_with_the_fifo_full);
+  RUN_TEST(test_reading_a_byte_makes_room_again);
   RUN_TEST(test_divisor_latch_is_written_without_sending);
   RUN_TEST(test_clearing_dlab_returns_to_thr_and_ier);
   RUN_TEST(test_ier_survives_a_divisor_change);

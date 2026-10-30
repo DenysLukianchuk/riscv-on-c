@@ -13,4 +13,6 @@ enum MmuResult mmu_translate(Cpu *cpu, uxlen_t vaddr, enum MmuAccess access,
 enum Trap mmu_fault_cause(enum MmuResult mmu_result,
                           enum MmuAccess access_type);
 
+unsigned mmu_bytes_to_page_end(uxlen_t vaddr);
+
 #endif // RISCV_CPU_MMU_H

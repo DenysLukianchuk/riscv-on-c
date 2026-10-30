@@ -3,10 +3,12 @@
 #include <stddef.h>
 
 #if XLEN == 64
-#define ISA "rv64ima_zicsr_zifencei"
+#define ISA "rv64imac_zicsr_zifencei"
+#define ISA_BASE "rv64i"
 #define MMU_TYPE "riscv,sv39"
 #else
-#define ISA "rv32ima_zicsr_zifencei"
+#define ISA "rv32imac_zicsr_zifencei"
+#define ISA_BASE "rv32i"
 #define MMU_TYPE "riscv,sv32"
 #endif
 #define TIMEBASE_FREQUENCY 10000000
@@ -53,6 +55,9 @@ static void describe_cpus(Fdt *fdt) {
   fdt_property_u32(fdt, "reg", 0);
   fdt_property_string(fdt, "compatible", "riscv");
   fdt_property_string(fdt, "riscv,isa", ISA);
+  fdt_property_string(fdt, "riscv,isa-base", ISA_BASE);
+  put_strings(fdt, "riscv,isa-extensions",
+              "i\0m\0a\0c\0zicsr\0zifencei\0svade\0zicntr");
   fdt_property_string(fdt, "mmu-type", MMU_TYPE);
   fdt_property_string(fdt, "status", "okay");
 

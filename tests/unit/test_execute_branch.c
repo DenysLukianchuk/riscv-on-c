@@ -122,14 +122,11 @@ static void test_branch_with_reserved_funct3_raises_illegal_instruction(void) {
   TEST_ASSERT_ILLEGAL_INSTRUCTION(BRANCH_FUNCT3_3_X1_X2_16);
 }
 
-static void
-test_taken_branch_to_misaligned_target_raises_address_misaligned(void) {
-  write_csr(MCAUSE, 0xFF);
-
+// With the C extension a branch target only has to be even.
+static void test_taken_branch_may_target_a_2_byte_boundary(void) {
   execute_branch_with(BEQ(1, 2, 6), 5, 5);
 
-  TEST_ASSERT_EQUAL_HEX64(CAUSE_MISALIGNED_FETCH, read_csr(MCAUSE));
-  TEST_ASSERT_EQUAL_HEX64(BRANCH_PC + 6, read_csr(MTVAL));
+  TEST_ASSERT_EQUAL_HEX64(BRANCH_PC + 6, cpu_get_pc(cpu));
 }
 
 static void test_not_taken_branch_with_misaligned_offset_falls_through(void) {
@@ -156,7 +153,7 @@ int main(void) {
   RUN_TEST(test_bgeu_falls_through_when_rs1_value_is_less_as_unsigned);
   RUN_TEST(test_beq_jumps_backwards_with_negative_offset);
   RUN_TEST(test_branch_with_reserved_funct3_raises_illegal_instruction);
-  RUN_TEST(test_taken_branch_to_misaligned_target_raises_address_misaligned);
+  RUN_TEST(test_taken_branch_may_target_a_2_byte_boundary);
   RUN_TEST(test_not_taken_branch_with_misaligned_offset_falls_through);
   return UNITY_END();
 }

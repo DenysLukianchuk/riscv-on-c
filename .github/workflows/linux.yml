@@ -1,0 +1,112 @@
+name: Linux
+
+# Builds Linux inside OpenSBI with scripts/build-linux.sh and boots it on the
+# emulator. Every push boots the quick hello image; a v* tag (or a manual
+# run) also builds the busybox shell image and attaches it to the release.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  hello:
+    name: boot Linux (hello)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build gcc-riscv64-linux-gnu flex bison bc
+
+      - name: Build the emulator
+        run: |
+          cmake --preset rv64-release -DRISCV_TESTS=OFF
+          cmake --build --preset rv64-release --target riscv
+
+      - name: Build Linux
+        run: scripts/build-linux.sh hello
+
+      - name: Boot
+        shell: bash
+        run: |
+          timeout 300 build/rv64-release/riscv build/linux-hello/fw_payload.elf | tee boot.log
+          grep -q "Hello from user space" boot.log
+
+  shell:
+    name: boot Linux (shell)
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build gcc-riscv64-linux-gnu flex bison bc
+
+      - name: Build the emulator
+        run: |
+          cmake --preset rv64-release -DRISCV_TESTS=OFF
+          cmake --build --preset rv64-release --target riscv
+
+      - name: Build Linux
+        run: scripts/build-linux.sh shell
+
+      # The board does not power off on its own here: wait up to five
+      # minutes for the login prompt, then stop it.
+      - name: Boot
+        shell: bash
+        run: |
+          build/rv64-release/riscv build/linux-shell/fw_payload.elf \
+            < /dev/null > boot.log &
+          for i in $(seq 300); do
+            grep -q "riscv-on-c login:" boot.log && break
+            sleep 1
+          done
+          kill $! || true
+          cat boot.log
+          grep -q "riscv-on-c login:" boot.log
+
+      # The image holds GPL software (Linux, busybox): ship its sources and
+      # licenses with it. Buildroot's legal-info covers its packages; the
+      # kernel and OpenSBI are built outside Buildroot and added by hand.
+      # Left out: sources of the host build tools and of the kernel headers,
+      # neither of which ends up in the image.
+      - name: Collect sources and licenses
+        run: |
+          work=build/linux-shell
+          make -C $work/buildroot O=$PWD/$work/buildroot-build legal-info
+          mkdir -p legal-info/linux legal-info/opensbi
+          cp -r $work/buildroot-build/legal-info legal-info/buildroot
+          rm -rf legal-info/buildroot/host-sources \
+            legal-info/buildroot/sources/linux-headers-*
+          cp $work/linux-*.tar.xz $work/linux.config legal-info/linux/
+          cp $work/opensbi/COPYING.BSD legal-info/opensbi/
+          git -C $work/opensbi describe --tags > legal-info/opensbi/VERSION
+          tar czf legal-info.tar.gz legal-info
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: riscv-on-c-linux-shell
+          path: |
+            build/rv64-release/riscv
+            build/linux-shell/fw_payload.elf
+            build/linux-shell/linux.config
+            legal-info.tar.gz
+            boot.log
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/rv64-release/riscv
+            build/linux-shell/fw_payload.elf
+            build/linux-shell/linux.config
+            legal-info.tar.gz

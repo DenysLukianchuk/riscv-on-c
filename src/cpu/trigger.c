@@ -172,10 +172,18 @@ static void trigger_data_init(struct TriggerData *data) {
   data->tdata2 = 0;
 }
 
+static void update_armed(struct TriggerModule *module) {
+  module->armed = false;
+  for (int i = 0; i < TRIGGERS_COUNT; i++)
+    if (TDATA1_TYPE_OF(module->triggers[i].tdata1) != TDATA1_TYPE_DISABLED)
+      module->armed = true;
+}
+
 void trigger_regs_init(struct TriggerModule *module) {
   module->tselect = 0;
   for (int i = 0; i < TRIGGERS_COUNT; i++)
     trigger_data_init(&module->triggers[i]);
+  update_armed(module);
 }
 
 static struct TriggerData *selected_data(struct TriggerModule *module) {
@@ -315,6 +323,7 @@ void trigger_regs_write(struct TriggerModule *module, uint16_t addr,
     break;
   case CSR_REG_TDATA1:
     selected_data(module)->tdata1 = legalize_tdata1(value, module->tselect);
+    update_armed(module);
     break;
   case CSR_REG_TDATA2:
     selected_data(module)->tdata2 = legalize_tdata2(module, value);
@@ -473,11 +482,13 @@ static void mark_fired(struct TriggerData *trigger) {
 static bool trigger_match_access(struct TriggerModule *module,
                                  const struct TriggerAccess *access,
                                  uxlen_t *tval) {
+  if (!module->armed)
+    return false;
   bool fired = false;
   unsigned start = 0;
   while (start < TRIGGERS_COUNT) {
     unsigned end = chain_end(module, start);
-    uxlen_t chain_tval;
+    uxlen_t chain_tval = 0;
     if (chain_has_data(module, start, end) == (access->data != NULL) &&
         chain_matches(module, start, end, access, &chain_tval)) {
       for (unsigned i = start; i <= end; i++)
@@ -526,6 +537,8 @@ bool trigger_match_store(struct TriggerModule *module, enum Privilege privilege,
 
 bool trigger_match_exception(struct TriggerModule *module, enum Privilege from,
                              unsigned cause) {
+  if (!module->armed)
+    return false;
   bool fired = false;
   for (unsigned i = 0; i < TRIGGERS_COUNT; i++) {
     struct TriggerData *trigger = &module->triggers[i];

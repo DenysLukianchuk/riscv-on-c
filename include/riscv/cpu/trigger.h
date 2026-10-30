@@ -23,6 +23,7 @@ struct TriggerData {
 struct TriggerModule {
   uxlen_t tselect;
   struct TriggerData triggers[TRIGGERS_COUNT];
+  bool armed;
 };
 
 static inline bool is_trigger_register(uint16_t addr) {

@@ -2,6 +2,7 @@
 #define RISCV_CPU_DECODER_H
 
 #include "riscv/xlen.h"
+#include <stdbool.h>
 #include <stdint.h>
 
 // Bit positions of the instruction fields, as laid out in the RISC-V
@@ -55,6 +56,7 @@
 // srli; the bits above the shift amount must otherwise be zero.
 #define SHIFT_IMM_ARITHMETIC_BIT 10
 
+#define COMPRESSED_WIDTH_BYTES 2
 #define INSTRUCTION_WIDTH_BYTES 4
 #define INSTRUCTION_WIDTH_BITS (INSTRUCTION_WIDTH_BYTES * 8)
 
@@ -67,6 +69,7 @@ struct Instruction {
   uint8_t rs2;
   uint8_t funct7;
   int32_t imm;
+  uint8_t length;
 };
 
 enum Opcode {
@@ -173,5 +176,7 @@ enum Funct7 {
 };
 
 struct Instruction instruction_decode(uint32_t raw);
+uint32_t instruction_expand(uint16_t compressed);
+bool instruction_is_compressed(uint32_t instruction);
 
 #endif // RISCV_CPU_DECODER_H

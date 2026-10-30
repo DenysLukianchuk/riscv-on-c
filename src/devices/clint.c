@@ -110,3 +110,5 @@ struct BusDevice clint_bus_device(Clint *clint, uxlen_t base) {
                             .read = bus_read,
                             .write = bus_write};
 }
+
+uint64_t clint_mtime(const Clint *clint) { return clint->mtime; }

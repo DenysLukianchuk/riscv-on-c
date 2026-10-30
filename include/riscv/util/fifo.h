@@ -13,6 +13,7 @@ struct Fifo {
 
 void fifo_init(struct Fifo *fifo, uint8_t *storage, unsigned capacity);
 bool fifo_empty(const struct Fifo *fifo);
+bool fifo_full(const struct Fifo *fifo);
 bool fifo_push(struct Fifo *fifo, uint8_t byte);
 uint8_t fifo_pop(struct Fifo *fifo);
 

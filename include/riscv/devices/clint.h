@@ -18,5 +18,6 @@ bool clint_timer_pending(const Clint *clint);
 bool clint_software_pending(const Clint *clint);
 
 struct BusDevice clint_bus_device(Clint *clint, uxlen_t base);
+uint64_t clint_mtime(const Clint *clint);
 
 #endif // RISCV_DEVICES_CLINT_H

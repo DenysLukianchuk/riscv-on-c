@@ -100,6 +100,44 @@ static void test_decode_extracts_rd_of_jal(void) {
   TEST_ASSERT_EQUAL_UINT8(1, inst.rd);
 }
 
+// Bits 1:0 tell the length: 11 marks a 32-bit instruction, anything else a
+// 16-bit one from the C extension, which decodes as the instruction it expands
+// to.
+
+static void test_decode_gives_32_bit_instruction_length_4(void) {
+  struct Instruction inst = instruction_decode(ADDI(1, 0, 5));
+
+  TEST_ASSERT_EQUAL_UINT8(4, inst.length);
+}
+
+static void test_decode_expands_compressed_instruction(void) {
+  struct Instruction inst = instruction_decode(0x9782); // c.jalr a5
+
+  TEST_ASSERT_EQUAL_HEX8(0x67, inst.opcode);
+  TEST_ASSERT_EQUAL_UINT8(1, inst.rd);
+  TEST_ASSERT_EQUAL_UINT8(15, inst.rs1);
+  TEST_ASSERT_EQUAL_INT32(0, inst.imm);
+  TEST_ASSERT_EQUAL_UINT8(2, inst.length);
+}
+
+// raw keeps the 16 bits as fetched: an illegal instruction reports them in
+// mtval, not the expansion.
+static void test_decode_keeps_compressed_bits_in_raw(void) {
+  struct Instruction inst = instruction_decode(0x9782);
+
+  TEST_ASSERT_EQUAL_HEX32(0x9782, inst.raw);
+}
+
+// The fetch may read a whole word; the upper half then belongs to the next
+// instruction and must not leak into this one.
+static void test_decode_ignores_upper_half_after_compressed_instruction(void) {
+  struct Instruction inst = instruction_decode(0x12349782);
+
+  TEST_ASSERT_EQUAL_HEX32(0x9782, inst.raw);
+  TEST_ASSERT_EQUAL_UINT8(15, inst.rs1);
+  TEST_ASSERT_EQUAL_UINT8(2, inst.length);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_decode_extracts_opcode);
@@ -117,5 +155,9 @@ int main(void) {
   RUN_TEST(test_decode_assembles_j_type_immediate);
   RUN_TEST(test_decode_extracts_auipc_immediate);
   RUN_TEST(test_decode_extracts_rd_of_jal);
+  RUN_TEST(test_decode_gives_32_bit_instruction_length_4);
+  RUN_TEST(test_decode_expands_compressed_instruction);
+  RUN_TEST(test_decode_keeps_compressed_bits_in_raw);
+  RUN_TEST(test_decode_ignores_upper_half_after_compressed_instruction);
   return UNITY_END();
 }

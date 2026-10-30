@@ -6,10 +6,12 @@
 // bindings follow the Linux and OpenSBI documentation for QEMU's virt board.
 #define RAM_SIZE 0x10000
 #if XLEN == 64
-#define ISA "rv64ima_zicsr_zifencei"
+#define ISA "rv64imac_zicsr_zifencei"
+#define ISA_BASE "rv64i"
 #define MMU_TYPE "riscv,sv39"
 #else
-#define ISA "rv32ima_zicsr_zifencei"
+#define ISA "rv32imac_zicsr_zifencei"
+#define ISA_BASE "rv32i"
 #define MMU_TYPE "riscv,sv32"
 #endif
 
@@ -100,6 +102,31 @@ static void test_cpu_node_describes_hart_zero(void) {
 // one Linux cannot run on.
 static void test_cpu_node_names_its_mmu(void) {
   TEST_ASSERT_EQUAL_STRING(MMU_TYPE, string("/cpus/cpu@0", "mmu-type"));
+}
+
+// riscv,isa is deprecated: Linux reads the base ISA and a list of extensions,
+// one string each, and ignores riscv,isa unless built to fall back to it.
+#define CPU "/cpus/cpu@0"
+
+static void test_cpu_node_names_its_base_isa(void) {
+  TEST_ASSERT_EQUAL_STRING(ISA_BASE, string(CPU, "riscv,isa-base"));
+}
+
+static void test_cpu_node_lists_its_extensions(void) {
+  const char *implemented[] = {"i",     "m",        "a",      "c",
+                               "zicsr", "zifencei", "zicntr", "svade"};
+  for (unsigned i = 0; i < sizeof implemented / sizeof implemented[0]; i++)
+    TEST_ASSERT_TRUE_MESSAGE(
+        has_string(CPU, "riscv,isa-extensions", implemented[i]),
+        implemented[i]);
+}
+
+// Claiming an extension the hart lacks would let Linux use its instructions.
+static void test_cpu_node_lists_no_missing_extensions(void) {
+  const char *missing[] = {"f", "d", "v", "svadu"};
+  for (unsigned i = 0; i < sizeof missing / sizeof missing[0]; i++)
+    TEST_ASSERT_FALSE_MESSAGE(
+        has_string(CPU, "riscv,isa-extensions", missing[i]), missing[i]);
 }
 
 // The console: /chosen points at the UART.
@@ -212,6 +239,9 @@ int main(void) {
   RUN_TEST(test_cpus_node_counts_harts_by_id);
   RUN_TEST(test_cpu_node_describes_hart_zero);
   RUN_TEST(test_cpu_node_names_its_mmu);
+  RUN_TEST(test_cpu_node_names_its_base_isa);
+  RUN_TEST(test_cpu_node_lists_its_extensions);
+  RUN_TEST(test_cpu_node_lists_no_missing_extensions);
   RUN_TEST(test_chosen_points_stdout_at_the_uart);
   RUN_TEST(test_hart_has_its_interrupt_controller);
   RUN_TEST(test_soc_is_a_simple_bus);

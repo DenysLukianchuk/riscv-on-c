@@ -45,6 +45,18 @@ static void test_a_full_fifo_refuses_new_bytes(void) {
 }
 
 // Pushing and popping past the end of the storage wraps around.
+static void test_the_fifo_is_full_at_capacity(void) {
+  for (int i = 0; i < CAPACITY - 1; i++)
+    fifo_push(&fifo, i);
+  TEST_ASSERT_FALSE(fifo_full(&fifo));
+
+  fifo_push(&fifo, 0);
+  TEST_ASSERT_TRUE(fifo_full(&fifo));
+
+  fifo_pop(&fifo);
+  TEST_ASSERT_FALSE(fifo_full(&fifo));
+}
+
 static void test_the_fifo_wraps_around(void) {
   for (unsigned round = 0; round < 3; round++) {
     for (unsigned i = 0; i < CAPACITY; i++)
@@ -62,6 +74,7 @@ int main(void) {
   RUN_TEST(test_bytes_come_out_in_the_order_they_went_in);
   RUN_TEST(test_popping_an_empty_fifo_gives_zero);
   RUN_TEST(test_a_full_fifo_refuses_new_bytes);
+  RUN_TEST(test_the_fifo_is_full_at_capacity);
   RUN_TEST(test_the_fifo_wraps_around);
   return UNITY_END();
 }

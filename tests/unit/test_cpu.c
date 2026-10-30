@@ -102,6 +102,51 @@ static void test_trapping_instruction_does_not_retire(void) {
   TEST_ASSERT_EQUAL_HEX64(0, read_csr(MINSTRET));
 }
 
+// Fetching with the C extension: the hart reads the first 2 bytes, and only
+// when bits 1:0 are 11 the 2 bytes after them. A 2-byte instruction therefore
+// never touches what follows it.
+#define RAM_END (RAM_BASE + TEST_RAM_SIZE)
+#define C_LI_S1_17 0x44c5 // c.li s1, 17
+
+static void test_compressed_instruction_at_end_of_ram_is_fetched(void) {
+  write_csr(MCAUSE, 0xFF);
+  bus_write(bus, RAM_END - 2, 2, C_LI_S1_17);
+  cpu_set_pc(cpu, RAM_END - 2);
+
+  cpu_step(cpu);
+
+  TEST_ASSERT_EQUAL_HEX64(17, get_reg(9));
+  TEST_ASSERT_EQUAL_HEX64(RAM_END, cpu_get_pc(cpu));
+  TEST_ASSERT_EQUAL_HEX64(0xFF, read_csr(MCAUSE));
+}
+
+// mepc points at the instruction, mtval at the part that could not be read.
+static void test_instruction_running_past_end_of_ram_faults_there(void) {
+  bus_write(bus, RAM_END - 2, 2, ADDI(5, 0, 42) & 0xFFFF);
+  cpu_set_pc(cpu, RAM_END - 2);
+
+  cpu_step(cpu);
+
+  TEST_ASSERT_EQUAL_HEX64(CAUSE_FETCH_ACCESS, read_csr(MCAUSE));
+  TEST_ASSERT_EQUAL_HEX64(RAM_END, read_csr(MTVAL));
+  TEST_ASSERT_EQUAL_HEX64(RAM_END - 2, read_csr(MEPC));
+}
+
+// After a 2-byte instruction the next 4-byte one starts at an address that
+// is a multiple of 2 but not of 4.
+static void test_mixed_lengths_run_one_after_another(void) {
+  bus_write(bus, RAM_BASE, 2, C_LI_S1_17);
+  bus_write(bus, RAM_BASE + 2, 2, ADDI(5, 9, 25) & 0xFFFF);
+  bus_write(bus, RAM_BASE + 4, 2, ADDI(5, 9, 25) >> 16);
+  bus_write(bus, RAM_BASE + 6, 2, 0x0001); // c.nop
+  cpu_set_pc(cpu, RAM_BASE);
+
+  run_steps(3);
+
+  TEST_ASSERT_EQUAL_HEX64(42, get_reg(5));
+  TEST_ASSERT_EQUAL_HEX64(RAM_BASE + 8, cpu_get_pc(cpu));
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_execute_advances_pc_to_next_instruction);
@@ -114,5 +159,8 @@ int main(void) {
   RUN_TEST(test_minstret_counts_retired_instructions);
   RUN_TEST(test_minstret_is_readable_at_its_csr_address);
   RUN_TEST(test_trapping_instruction_does_not_retire);
+  RUN_TEST(test_compressed_instruction_at_end_of_ram_is_fetched);
+  RUN_TEST(test_instruction_running_past_end_of_ram_faults_there);
+  RUN_TEST(test_mixed_lengths_run_one_after_another);
   return UNITY_END();
 }

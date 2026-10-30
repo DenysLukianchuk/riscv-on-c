@@ -46,6 +46,10 @@ enum CsrRegister {
   CSR_REG_MIP = 0x344,
   CSR_REG_SIP = 0x144,
   CSR_REG_SATP = 0x180,
+  CSR_REG_TIME = 0xC01,
+#if XLEN == 32
+  CSR_REG_TIMEH = 0xC81,
+#endif
 };
 
 enum CsrResult { CSR_OK, CSR_ILLEGAL };
@@ -89,6 +93,7 @@ static inline enum Privilege mstatus_mpp(uxlen_t mstatus) {
 #define MISA_U MISA_EXTENSION('U')
 #define MISA_S MISA_EXTENSION('S')
 #define MISA_A MISA_EXTENSION('A')
+#define MISA_C MISA_EXTENSION('C')
 
 #define SATP_MODE_BARE 0
 
@@ -122,5 +127,6 @@ void csr_set_seip_line(Csr *csr, bool raised);
 bool csr_pending_interrupt(Csr *csr, enum Privilege privilege, unsigned *code);
 void csr_reset(Csr *csr);
 uxlen_t satp_mode(uxlen_t value);
+void csr_set_time(Csr *csr, uint64_t mtime);
 
 #endif // RISCV_CPU_CSR_H

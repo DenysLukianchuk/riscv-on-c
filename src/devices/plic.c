@@ -21,6 +21,7 @@ struct Plic {
   uint32_t claimed;
   uint32_t enable[PLIC_CONTEXTS];
   uint8_t threshold[PLIC_CONTEXTS];
+  bool line[PLIC_CONTEXTS];
 };
 
 enum PlicRegister { PRIORITY, PENDING, ENABLE, THRESHOLD, CLAIM, RESERVED };
@@ -78,6 +79,11 @@ static unsigned best_source(const Plic *plic, unsigned context) {
   return best;
 }
 
+static void update_lines(Plic *plic) {
+  for (unsigned context = 0; context < PLIC_CONTEXTS; context++)
+    plic->line[context] = best_source(plic, context) != 0;
+}
+
 static uint32_t claim(Plic *plic, unsigned context) {
   unsigned source = best_source(plic, context);
   if (source != 0)
@@ -116,8 +122,10 @@ enum BusStatus plic_read(Plic *plic, uxlen_t offset, unsigned size,
       *value = plic->threshold[context];
     break;
   case CLAIM:
-    if (context < PLIC_CONTEXTS)
+    if (context < PLIC_CONTEXTS) {
       *value = claim(plic, context);
+      update_lines(plic);
+    }
     break;
   case RESERVED:
     break;
@@ -154,20 +162,27 @@ enum BusStatus plic_write(Plic *plic, uxlen_t offset, unsigned size,
   case RESERVED:
     break;
   }
+  update_lines(plic);
   return BUS_OK;
 }
 
 void plic_set_source(Plic *plic, unsigned source, bool raised) {
   if (source == 0 || source >= PLIC_SOURCES)
     return;
+
+  bool was_raised = plic->raised & SOURCE_BIT(source);
+  if (was_raised == raised)
+    return;
+
   if (raised)
     plic->raised |= SOURCE_BIT(source);
   else
     plic->raised &= ~SOURCE_BIT(source);
+  update_lines(plic);
 }
 
 bool plic_interrupt_pending(const Plic *plic, unsigned context) {
-  return context < PLIC_CONTEXTS && best_source(plic, context) != 0;
+  return context < PLIC_CONTEXTS && plic->line[context];
 }
 
 static enum BusStatus bus_read(void *plic, uxlen_t offset, unsigned size,

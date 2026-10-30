@@ -32,13 +32,33 @@
       "displayName": "RV32, no sanitizers",
       "inherits": "base",
       "cacheVariables": { "XLEN": "32", "SANITIZE": "OFF" }
+    },
+    {
+      "name": "rv64-release",
+      "displayName": "RV64, optimised, for running guests",
+      "inherits": "base",
+      "cacheVariables": {
+        "XLEN": "64", "SANITIZE": "OFF", "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON"
+      }
+    },
+    {
+      "name": "rv32-release",
+      "displayName": "RV32, optimised, for running guests",
+      "inherits": "base",
+      "cacheVariables": {
+        "XLEN": "32", "SANITIZE": "OFF", "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON"
+      }
     }
   ],
   "buildPresets": [
     { "name": "rv64", "configurePreset": "rv64" },
     { "name": "rv32", "configurePreset": "rv32" },
     { "name": "rv64-nosan", "configurePreset": "rv64-nosan" },
-    { "name": "rv32-nosan", "configurePreset": "rv32-nosan" }
+    { "name": "rv32-nosan", "configurePreset": "rv32-nosan" },
+    { "name": "rv64-release", "configurePreset": "rv64-release" },
+    { "name": "rv32-release", "configurePreset": "rv32-release" }
   ],
   "testPresets": [
     {

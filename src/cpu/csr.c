@@ -4,7 +4,11 @@
 #include "riscv/util/bits.h"
 #include <stdlib.h>
 
-enum Counteren { COUNTEREN_CY = 1u << 0, COUNTEREN_IR = 1u << 2 };
+enum Counteren {
+  COUNTEREN_CY = 1u << 0,
+  COUNTEREN_TM = 1u << 1,
+  COUNTEREN_IR = 1u << 2,
+};
 
 struct ModeRegs {
   uxlen_t tvec, scratch, epc, cause, tval;
@@ -77,6 +81,7 @@ struct Csr {
   bool minstret_written;
   bool seip_line;
   uxlen_t satp;
+  uint64_t time;
 };
 
 static void mode_regs_init(struct ModeRegs *regs) {
@@ -104,7 +109,7 @@ void csr_reset(Csr *csr) {
   csr->mstatus = 0;
 #endif
   csr->mie = 0;
-  csr->misa = MISA_MXL | MISA_I | MISA_M | MISA_U | MISA_S | MISA_A;
+  csr->misa = MISA_MXL | MISA_I | MISA_M | MISA_U | MISA_S | MISA_A | MISA_C;
   csr->mvendorid = 0;
   csr->marchid = 0;
   csr->mimpid = 0;
@@ -116,6 +121,7 @@ void csr_reset(Csr *csr) {
   csr->mip = 0;
   csr->seip_line = false;
   csr->satp = 0;
+  csr->time = 0;
   trigger_regs_init(&csr->trigger);
 }
 
@@ -149,6 +155,11 @@ static inline bool csr_is_accessible(Csr *csr, uint16_t addr,
   case CSR_REG_CYCLEH:
 #endif
     return counteren_accessible(csr, COUNTEREN_CY, privilege);
+  case CSR_REG_TIME:
+#if XLEN == 32
+  case CSR_REG_TIMEH:
+#endif
+    return counteren_accessible(csr, COUNTEREN_TM, privilege);
   case CSR_REG_INSTRET:
 #if XLEN == 32
   case CSR_REG_INSTRETH:
@@ -266,6 +277,14 @@ enum CsrResult csr_read(Csr *csr, uint16_t addr, enum Privilege privilege,
   case CSR_REG_SATP:
     *value = csr->satp;
     return CSR_OK;
+  case CSR_REG_TIME:
+    *value = (uxlen_t)csr->time;
+    return CSR_OK;
+#if XLEN == 32
+  case CSR_REG_TIMEH:
+    *value = (uxlen_t)(csr->time >> XLEN);
+    return CSR_OK;
+#endif
   default:
     return CSR_ILLEGAL;
   }
@@ -531,3 +550,5 @@ bool csr_pending_interrupt(Csr *csr, enum Privilege privilege, unsigned *code) {
   }
   return false;
 }
+
+void csr_set_time(Csr *csr, uint64_t mtime) { csr->time = mtime; }
