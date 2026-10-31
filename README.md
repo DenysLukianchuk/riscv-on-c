@@ -44,7 +44,7 @@ agreeing with it.
 Boots [OpenSBI](https://github.com/riscv-software-src/opensbi) v1.9: the
 banner, its test payload in S-mode and a clean power-off.
 
-Boots Linux 6.18 to a busybox shell in about seven seconds: OpenSBI hands
+Boots Linux 6.18 to a busybox shell in about five seconds: OpenSBI hands
 over to the kernel, which brings up paging, the timer, the PLIC and the
 16550 console, then busybox's init starts its services and a login on the
 console. Keys typed at the host terminal reach the guest through the UART.

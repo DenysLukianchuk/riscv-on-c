@@ -62,7 +62,7 @@ static bool fetch(Cpu *cpu, uxlen_t pc, uint32_t *instruction) {
   return true;
 }
 
-static void step_instruction(Cpu *cpu) {
+static void step_instruction(Cpu *cpu, bool triggers_armed) {
   uxlen_t pc = cpu_get_pc(cpu);
   Csr *csr = cpu_get_csr(cpu);
   enum Privilege privilege = cpu_get_privilege(cpu);
@@ -74,7 +74,8 @@ static void step_instruction(Cpu *cpu) {
     return;
   }
 
-  if (csr_breakpoint_on_execute(csr, privilege, pc, NULL, &tval)) {
+  if (triggers_armed &&
+      csr_breakpoint_on_execute(csr, privilege, pc, NULL, &tval)) {
     cpu_set_pc(cpu, cpu_raise_exception(cpu, TRAP_BREAKPOINT, tval));
     return;
   }
@@ -84,7 +85,8 @@ static void step_instruction(Cpu *cpu) {
     return;
 
   uxlen_t data = (uxlen_t)instruction;
-  if (csr_breakpoint_on_execute(csr, privilege, pc, &data, &tval)) {
+  if (triggers_armed &&
+      csr_breakpoint_on_execute(csr, privilege, pc, &data, &tval)) {
     cpu_set_pc(cpu, cpu_raise_exception(cpu, TRAP_BREAKPOINT, tval));
     return;
   }
@@ -96,12 +98,17 @@ static void step_instruction(Cpu *cpu) {
 
 void cpu_step(Cpu *cpu) {
   Csr *csr = cpu_get_csr(cpu);
+  if (!csr_triggers_armed(csr)) {
+    step_instruction(cpu, false);
+    return;
+  }
+
   enum Privilege privilege = cpu_get_privilege(cpu);
   bool counted = csr_breakpoints_enabled(csr, privilege);
   if (csr_breakpoint_on_icount(csr, privilege))
     cpu_set_pc(cpu, cpu_raise_exception(cpu, TRAP_BREAKPOINT, 0));
   else
-    step_instruction(cpu);
+    step_instruction(cpu, true);
   if (counted)
     csr_count_icount(csr, privilege);
 }

@@ -552,3 +552,5 @@ bool csr_pending_interrupt(Csr *csr, enum Privilege privilege, unsigned *code) {
 }
 
 void csr_set_time(Csr *csr, uint64_t mtime) { csr->time = mtime; }
+
+bool csr_triggers_armed(Csr *csr) { return csr->trigger.armed != 0; }

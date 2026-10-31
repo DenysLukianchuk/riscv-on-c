@@ -62,6 +62,37 @@ static void test_writing_zero_to_tdata1_disables_the_trigger(void) {
   TEST_ASSERT_EQUAL_HEX64(DISABLED, read_csr(TDATA1));
 }
 
+// While no trigger is set the hart skips all trigger checks: the module
+// reports whether any trigger is set.
+
+static bool armed(void) { return csr_triggers_armed(cpu_get_csr(cpu)); }
+
+static void test_no_trigger_is_armed_after_reset(void) {
+  TEST_ASSERT_FALSE(armed());
+}
+
+static void test_setting_any_trigger_arms_the_module(void) {
+  select_trigger(2);
+
+  write_csr(TDATA1, EXECUTE_BREAKPOINT);
+
+  TEST_ASSERT_TRUE(armed());
+}
+
+static void test_module_stays_armed_until_the_last_trigger_is_disabled(void) {
+  select_trigger(0);
+  write_csr(TDATA1, EXECUTE_BREAKPOINT);
+  select_trigger(1);
+  write_csr(TDATA1, EXECUTE_BREAKPOINT);
+
+  write_csr(TDATA1, 0);
+  TEST_ASSERT_TRUE(armed());
+
+  select_trigger(0);
+  write_csr(TDATA1, 0);
+  TEST_ASSERT_FALSE(armed());
+}
+
 static void test_tdata1_with_an_unsupported_type_is_disabled(void) {
   write_csr(TDATA1, TDATA1_TYPE(TRIGGER_TYPE_TMEXTTRIGGER) | 0x1FF);
 
@@ -1970,6 +2001,9 @@ int main(void) {
   RUN_TEST(test_triggers_start_disabled);
   RUN_TEST(test_tdata1_holds_an_mcontrol_breakpoint);
   RUN_TEST(test_writing_zero_to_tdata1_disables_the_trigger);
+  RUN_TEST(test_no_trigger_is_armed_after_reset);
+  RUN_TEST(test_setting_any_trigger_arms_the_module);
+  RUN_TEST(test_module_stays_armed_until_the_last_trigger_is_disabled);
   RUN_TEST(test_tdata1_with_an_unsupported_type_is_disabled);
   RUN_TEST(test_mcontrol_keeps_only_supported_settings);
   RUN_TEST(test_mcontrol_reports_no_napot_support);

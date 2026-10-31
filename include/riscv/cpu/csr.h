@@ -128,5 +128,6 @@ bool csr_pending_interrupt(Csr *csr, enum Privilege privilege, unsigned *code);
 void csr_reset(Csr *csr);
 uxlen_t satp_mode(uxlen_t value);
 void csr_set_time(Csr *csr, uint64_t mtime);
+bool csr_triggers_armed(Csr *csr);
 
 #endif // RISCV_CPU_CSR_H

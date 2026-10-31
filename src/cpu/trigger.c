@@ -175,7 +175,7 @@ static void trigger_data_init(struct TriggerData *data) {
 static void update_armed(struct TriggerModule *module) {
   module->armed = false;
   for (int i = 0; i < TRIGGERS_COUNT; i++)
-    if (TDATA1_TYPE_OF(module->triggers[i].tdata1) != TDATA1_TYPE_DISABLED)
+    if (module->triggers[i].tdata1 != TDATA1_TYPE_DISABLED)
       module->armed = true;
 }
 
