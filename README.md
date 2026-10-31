@@ -17,8 +17,14 @@ agreeing with it.
 
 ## Status
 
-- RV32I / RV64I base ISA, M, A (LR/SC, AMOs) and C (compressed
-  instructions) extensions
+- RV32I / RV64I base ISA, M, A (LR/SC, AMOs), F and D (single and double
+  precision floating point) and C (compressed instructions) extensions
+- F and D: all five rounding modes, the accrued exception flags in `fcsr`,
+  NaN-boxing and the canonical NaN, and `mstatus.FS` / `SD`, by which the
+  kernel saves the registers only when a process has changed them. The
+  host FPU does the arithmetic; where its results differ from what RISC-V
+  requires (NaN payloads, round-to-nearest-max-magnitude, `fcvt` saturation,
+  `fmin`/`fmax` and the zeros) the emulator corrects them
 - Zicsr; `cycle` / `instret` counters, 64-bit on RV32
 - Privilege modes M, S and U: traps, delegation (`medeleg`, `mideleg`),
   `mret` / `sret`, `ecall` / `ebreak` / `wfi`, `misa`, `mcounteren` /
@@ -34,6 +40,9 @@ agreeing with it.
   `0x0c000000`, an NS16550A UART with interrupts at `0x10000000`, and a test
   finisher at `0x00100000` through which the guest powers the board off with
   an exit code
+- Time follows the host's clock at the 10 MHz the device tree announces, and
+  a hart waiting in `wfi` lets the host sleep until its timer is due or a key
+  arrives, so an idle guest costs no host CPU
 - ELF loader; the board describes itself to the guest in a flattened device
   tree, and the hart starts by the RISC-V boot protocol: M-mode, hart ID in
   `a0`, device tree address in `a1`
@@ -61,8 +70,22 @@ isa		: rv64imac_zicntr_zicsr_zifencei_zaamo_zalrsc_zca_svade
 mmu		: sv39
 ```
 
+Runs [Alpine Linux](https://alpinelinux.org) 3.24, a distribution built for
+rv64gc, whose musl and busybox use the floating-point instructions:
+
+```
+Welcome to Alpine Linux 3.24
+Kernel 6.18.59 on riscv64 (/dev/ttyS0)
+
+riscv-on-c login: root
+riscv-on-c:~# cat /proc/cpuinfo | grep ^isa
+isa		: rv64imafdc_zicntr_zicsr_zifencei_zaamo_zalrsc_zca_zcd_svade
+riscv-on-c:~# awk 'BEGIN { printf "%.10f\n", sqrt(2) * atan2(0, -1) }'
+4.4428829382
+```
+
 Passes the official [riscv-tests](https://github.com/riscv-software-src/riscv-tests)
-`ui`, `um`, `ua` and `uc` suites on both XLENs, in physical memory and again in
+`ui`, `um`, `ua`, `uf`, `ud` and `uc` suites on both XLENs, in physical memory and again in
 U-mode under paging, along with 16 of 18 `mi` and all 7 `si` tests.
 
 ## Build and test
@@ -100,31 +123,40 @@ build/rv64-release/riscv path/to/opensbi/build/platform/generic/firmware/fw_payl
 `scripts/build-linux.sh` builds a Linux image for the emulator. The kernel
 (6.18, from `tinyconfig` plus what the board and user space need) travels
 inside OpenSBI's `fw_payload`, so the emulator loads a single ELF, and its
-user space sits in an initramfs. Everything is built for rv64imac, without
-floating-point instructions. The script downloads pinned
+user space sits in an initramfs. The script downloads pinned
 versions of its sources and needs `riscv64-linux-gnu-gcc`, `flex`, `bison`
 and `bc`; the shell image also needs what Buildroot needs, such as `g++` and
 a few Perl modules.
 
-There are two images:
+There are three images:
 
-- `shell`: busybox and musl from [Buildroot](https://buildroot.org), with a
-  login on the console. About ten minutes the first time, as Buildroot builds
-  its own compiler.
+- `alpine`: the [Alpine Linux](https://alpinelinux.org) mini root filesystem,
+  built by Alpine for rv64gc, with a login on the console. The kernel saves
+  and restores the floating-point registers. There is no disk yet, so the
+  whole system lives in RAM and changes are lost at power-off. About a minute.
+- `shell`: busybox and musl from [Buildroot](https://buildroot.org), built for
+  rv64imac without floating point, with a login on the console. About ten
+  minutes the first time, as Buildroot builds its own compiler.
 - `hello`: a `/init` built against nolibc, the small C library in the kernel
   sources, that greets from U-mode and powers the board off. About a minute.
 
 ```sh
 cmake --preset rv64-release && cmake --build --preset rv64-release
-scripts/build-linux.sh shell            # result in build/linux-shell
-build/rv64-release/riscv build/linux-shell/fw_payload.elf
+scripts/build-linux.sh alpine           # result in build/linux-alpine
+build/rv64-release/riscv build/linux-alpine/fw_payload.elf
 ```
+
+The board has 128 MiB of RAM; `-m` changes that, in megabytes or with a K,
+M or G suffix, as in `riscv -m 1G image.elf`. On RV32 RAM can be up to 2 GiB,
+as it starts at `0x80000000` and has to end below 4 GiB.
 
 Log in as `root` without a password. The terminal is in raw mode while the
 emulator runs, so Ctrl-C goes to the guest; press Ctrl-A then x to quit the
 emulator.
 
-To skip the build, take `riscv` and `fw_payload.elf` from a release.
+To skip the build, take `riscv` and `alpine.elf` from a
+[release](https://github.com/DenysLukianchuk/riscv-on-c/releases) and run
+`./riscv alpine.elf`.
 
 ## License
 

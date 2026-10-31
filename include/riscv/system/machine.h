@@ -17,6 +17,11 @@ Bus *machine_get_bus(Machine *machine);
 
 void machine_step(Machine *machine);
 
+// After the first call, mtime is the host's clock and steps leave it alone.
+void machine_set_time(Machine *machine, uint64_t mtime);
+uint64_t machine_next_timer(Machine *machine);
+bool machine_idle(Machine *machine);
+
 void machine_console_input(Machine *machine, uint8_t byte);
 
 bool machine_finished(Machine *machine);

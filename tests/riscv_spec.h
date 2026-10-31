@@ -8,6 +8,9 @@
 #include "riscv/xlen.h"
 
 // CSR addresses.
+#define FFLAGS 0x001
+#define FRM 0x002
+#define FCSR 0x003
 #define SSTATUS 0x100
 #define SIE 0x104
 #define STVEC 0x105
@@ -65,6 +68,10 @@
 #define MSTATUS_UBE (1u << 6)
 #define MSTATUS_VS (3u << 9)
 #define MSTATUS_FS (3u << 13)
+#define MSTATUS_FS_OFF (0u << 13)
+#define MSTATUS_FS_INITIAL (1u << 13)
+#define MSTATUS_FS_CLEAN (2u << 13)
+#define MSTATUS_FS_DIRTY (3u << 13)
 #define MSTATUS_XS (3u << 15)
 #define MSTATUS_MPRV (1u << 17)
 #define MSTATUS_SUM (1u << 18)
@@ -252,5 +259,32 @@
 #define PTE_G (1u << 5)
 #define PTE_A (1u << 6)
 #define PTE_D (1u << 7)
+
+// fclass result: exactly one bit is set.
+#define FCLASS_NEG_INF (1u << 0)
+#define FCLASS_NEG_NORMAL (1u << 1)
+#define FCLASS_NEG_SUBNORMAL (1u << 2)
+#define FCLASS_NEG_ZERO (1u << 3)
+#define FCLASS_POS_ZERO (1u << 4)
+#define FCLASS_POS_SUBNORMAL (1u << 5)
+#define FCLASS_POS_NORMAL (1u << 6)
+#define FCLASS_POS_INF (1u << 7)
+#define FCLASS_SIGNALING_NAN (1u << 8)
+#define FCLASS_QUIET_NAN (1u << 9)
+
+// fflags: the accrued exception flags.
+#define FFLAG_NX (1u << 0)
+#define FFLAG_UF (1u << 1)
+#define FFLAG_OF (1u << 2)
+#define FFLAG_DZ (1u << 3)
+#define FFLAG_NV (1u << 4)
+
+// Rounding modes, in frm and in the rm field of an instruction.
+#define RM_RNE 0
+#define RM_RTZ 1
+#define RM_RDN 2
+#define RM_RUP 3
+#define RM_RMM 4
+#define RM_DYN 7
 
 #endif // TESTS_RISCV_SPEC_H

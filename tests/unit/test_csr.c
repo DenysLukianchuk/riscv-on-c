@@ -127,9 +127,10 @@ static void test_mstatus_keeps_its_implemented_fields(void) {
   TEST_ASSERT_EQUAL_HEX64(fields, value & (fields | MSTATUS_MPP));
 }
 
-// No F, V or custom extension state to track, so FS, VS, XS and SD stay 0.
+// No V or custom extension state to track, so VS and XS stay 0. FS is
+// covered in test_fp_state.c.
 static void test_mstatus_extension_state_reads_zero(void) {
-  uxlen_t state = MSTATUS_FS | MSTATUS_VS | MSTATUS_XS | MSTATUS_SD;
+  uxlen_t state = MSTATUS_VS | MSTATUS_XS;
 
   TEST_ASSERT_EQUAL_HEX64(0, mstatus_after_writing(state) & state);
 }
@@ -159,8 +160,9 @@ static void test_mie_keeps_only_implemented_interrupt_enables(void) {
 }
 
 #define IMPLEMENTED_MISA                                                       \
-  (MISA_MXL_FIELD | MISA_EXT('A') | MISA_EXT('C') | MISA_EXT('I') |            \
-   MISA_EXT('M') | MISA_EXT('S') | MISA_EXT('U'))
+  (MISA_MXL_FIELD | MISA_EXT('A') | MISA_EXT('C') | MISA_EXT('D') |            \
+   MISA_EXT('F') | MISA_EXT('I') | MISA_EXT('M') | MISA_EXT('S') |             \
+   MISA_EXT('U'))
 
 static void test_misa_reports_xlen_and_implemented_extensions(void) {
   uxlen_t value = 0;

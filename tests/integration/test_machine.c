@@ -157,6 +157,111 @@ static void test_time_csr_follows_mtime(void) {
                           registers_read(cpu_get_registers(cpu), 1));
 }
 
+// Host time: once the host sets mtime, it is the host's clock and steps no
+// longer advance it.
+
+static void test_set_time_stops_the_per_step_clock(void) {
+  load_nops();
+
+  machine_set_time(machine, 1000);
+  run(5);
+
+  TEST_ASSERT_EQUAL_HEX64(1000, clint(CLINT_MTIME));
+}
+
+static void test_time_csr_shows_the_host_time(void) {
+  static const uint32_t program[] = {CSRR(1, TIME)};
+  load(program, 1);
+
+  machine_set_time(machine, 1000);
+  run(1);
+
+  TEST_ASSERT_EQUAL_HEX64(1000, registers_read(cpu_get_registers(cpu), 1));
+}
+
+// mtime only counts up.
+static void test_set_time_never_goes_back(void) {
+  machine_set_time(machine, 1000);
+  machine_set_time(machine, 500);
+
+  TEST_ASSERT_EQUAL_HEX64(1000, clint(CLINT_MTIME));
+}
+
+// The host sleeps until the next timer interrupt: mtimecmp.
+static void test_next_timer_is_mtimecmp(void) {
+  TEST_ASSERT_EQUAL_HEX64(UINT64_MAX, machine_next_timer(machine));
+
+  bus_write(bus, CLINT_ADDR + CLINT_MTIMECMP, 8, 1234);
+
+  TEST_ASSERT_EQUAL_HEX64(1234, machine_next_timer(machine));
+}
+
+// Idle: the hart ran wfi and no interrupt it waits for is pending, so the host
+// can sleep instead of stepping. wfi waits for any interrupt enabled in mie,
+// whether or not mstatus enables interrupts globally.
+
+static void test_machine_is_idle_after_wfi(void) {
+  static const uint32_t program[] = {WFI};
+  load(program, 1);
+
+  run(1);
+
+  TEST_ASSERT_TRUE(machine_idle(machine));
+}
+
+static void test_machine_is_not_idle_after_other_instructions(void) {
+  load_nops();
+
+  run(1);
+
+  TEST_ASSERT_FALSE(machine_idle(machine));
+}
+
+static void test_machine_is_not_idle_once_the_next_step_runs(void) {
+  static const uint32_t program[] = {WFI, NOP};
+  load(program, 2);
+
+  run(2);
+
+  TEST_ASSERT_FALSE(machine_idle(machine));
+}
+
+static void test_enabled_pending_interrupt_ends_the_wait(void) {
+  static const uint32_t program[] = {WFI};
+  load(program, 1);
+  bus_write(bus, CLINT_ADDR + CLINT_MTIMECMP, 8, 0);
+  set_csr(MIE, MTIP);
+
+  run(1);
+
+  TEST_ASSERT_FALSE(machine_idle(machine));
+}
+
+static void test_disabled_pending_interrupt_does_not_end_the_wait(void) {
+  static const uint32_t program[] = {WFI};
+  load(program, 1);
+  bus_write(bus, CLINT_ADDR + CLINT_MTIMECMP, 8, 0);
+
+  run(1);
+
+  TEST_ASSERT_TRUE(machine_idle(machine));
+}
+
+// A byte arriving at the UART raises its interrupt through the PLIC.
+static void test_console_input_ends_the_wait(void) {
+  static const uint32_t program[] = {WFI};
+  load(program, 1);
+  bus_write(bus, UART_ADDR + UART_IER, 1, IER_RX_DATA);
+  set_plic(PLIC_PRIORITY(UART_IRQ), 1);
+  set_plic(PLIC_ENABLE(0), 1u << UART_IRQ);
+  set_csr(MIE, MEIP);
+  run(1);
+
+  machine_console_input(machine, 'x');
+
+  TEST_ASSERT_FALSE(machine_idle(machine));
+}
+
 // Wires: the CLINT drives MTIP and MSIP in mip. A step sees the lines as they
 // are when it starts.
 
@@ -487,5 +592,15 @@ int main(void) {
   RUN_TEST(test_program_powers_off_with_a_failure_code);
   RUN_TEST(test_board_that_is_off_runs_nothing);
   RUN_TEST(test_time_csr_follows_mtime);
+  RUN_TEST(test_set_time_stops_the_per_step_clock);
+  RUN_TEST(test_time_csr_shows_the_host_time);
+  RUN_TEST(test_set_time_never_goes_back);
+  RUN_TEST(test_next_timer_is_mtimecmp);
+  RUN_TEST(test_machine_is_idle_after_wfi);
+  RUN_TEST(test_machine_is_not_idle_after_other_instructions);
+  RUN_TEST(test_machine_is_not_idle_once_the_next_step_runs);
+  RUN_TEST(test_enabled_pending_interrupt_ends_the_wait);
+  RUN_TEST(test_disabled_pending_interrupt_does_not_end_the_wait);
+  RUN_TEST(test_console_input_ends_the_wait);
   return UNITY_END();
 }

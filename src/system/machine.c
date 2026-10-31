@@ -26,6 +26,7 @@ struct Machine {
   Bus *bus;
   Cpu *cpu;
   Fdt *fdt;
+  bool host_time;
 };
 
 static void attach(Bus *bus, struct BusDevice device) {
@@ -35,8 +36,12 @@ static void attach(Bus *bus, struct BusDevice device) {
 }
 
 Machine *machine_create(uxlen_t ram_size, UartOutputFn console, void *context) {
+  Memory *memory = memory_create(ram_size);
+  if (!memory)
+    return NULL;
   Machine *machine = (Machine *)malloc(sizeof(Machine));
-  machine->memory = memory_create(ram_size);
+  machine->memory = memory;
+  machine->host_time = false;
   machine->clint = clint_create();
   machine->plic = plic_create();
   machine->bus = bus_create();
@@ -97,9 +102,7 @@ Cpu *machine_get_cpu(Machine *machine) { return machine->cpu; }
 
 Bus *machine_get_bus(Machine *machine) { return machine->bus; }
 
-void machine_step(Machine *machine) {
-  if (machine_finished(machine))
-    return;
+static void update_interrupt_lines(Machine *machine) {
   Csr *csr = cpu_get_csr(machine->cpu);
   csr_set_interrupt_pending(csr, MTIP, clint_timer_pending(machine->clint));
   csr_set_time(csr, clint_mtime(machine->clint));
@@ -109,8 +112,37 @@ void machine_step(Machine *machine) {
   csr_set_interrupt_pending(csr, MEIP,
                             plic_interrupt_pending(machine->plic, M_CONTEXT));
   csr_set_seip_line(csr, plic_interrupt_pending(machine->plic, S_CONTEXT));
+}
+
+void machine_step(Machine *machine) {
+  if (machine_finished(machine))
+    return;
+  update_interrupt_lines(machine);
   cpu_step(machine->cpu);
-  clint_tick(machine->clint, 1);
+  if (!machine->host_time)
+    clint_tick(machine->clint, 1);
+}
+
+void machine_set_time(Machine *machine, uint64_t mtime) {
+  machine->host_time = true;
+  if (mtime > clint_mtime(machine->clint))
+    clint_set_mtime(machine->clint, mtime);
+}
+
+uint64_t machine_next_timer(Machine *machine) {
+  return clint_mtimecmp(machine->clint);
+}
+
+// wfi waits for an interrupt enabled in mie, whatever mstatus says.
+bool machine_idle(Machine *machine) {
+  if (!cpu_waiting(machine->cpu))
+    return false;
+  update_interrupt_lines(machine);
+  Csr *csr = cpu_get_csr(machine->cpu);
+  uxlen_t pending = 0, enabled = 0;
+  csr_read(csr, CSR_REG_MIP, PRIV_M, &pending);
+  csr_read(csr, CSR_REG_MIE, PRIV_M, &enabled);
+  return (pending & enabled) == 0;
 }
 
 void machine_console_input(Machine *machine, uint8_t byte) {

@@ -105,8 +105,10 @@
 enum CQuadrant { C_QUADRANT_0 = 0, C_QUADRANT_1 = 1, C_QUADRANT_2 = 2 };
 enum CFunct3Quadrant0 {
   C_ADDI4SPN = 0,
+  C_FLD = 1,
   C_LW = 2,
   C_LD = 3,
+  C_FSD = 5,
   C_SW = 6,
   C_SD = 7
 };
@@ -122,9 +124,11 @@ enum CFunct3Quadrant1 {
 };
 enum CFunct3Quadrant2 {
   C_SLLI = 0,
+  C_FLDSP = 1,
   C_LWSP = 2,
   C_LDSP = 3,
   C_JR_MV_ADD = 4,
+  C_FSDSP = 5,
   C_SWSP = 6,
   C_SDSP = 7
 };
@@ -275,13 +279,17 @@ static uint32_t expand_quadrant_0(uint16_t c) {
     return encode_i(cl_word_imm(c), high, FUNCT3_LW, low, OPCODE_LOAD);
   case C_SW:
     return encode_s(cl_word_imm(c), low, high, FUNCT3_SW, OPCODE_STORE);
+  case C_FLD:
+    return encode_i(cl_double_imm(c), high, FUNCT3_FP_D, low, OPCODE_LOAD_FP);
+  case C_FSD:
+    return encode_s(cl_double_imm(c), low, high, FUNCT3_FP_D, OPCODE_STORE_FP);
   case C_LD:
     if (XLEN == 32)
-      return C_ILLEGAL;
+      return encode_i(cl_word_imm(c), high, FUNCT3_FP_W, low, OPCODE_LOAD_FP);
     return encode_i(cl_double_imm(c), high, FUNCT3_LD, low, OPCODE_LOAD);
   case C_SD:
     if (XLEN == 32)
-      return C_ILLEGAL;
+      return encode_s(cl_word_imm(c), low, high, FUNCT3_FP_W, OPCODE_STORE_FP);
     return encode_s(cl_double_imm(c), low, high, FUNCT3_SD, OPCODE_STORE);
   }
   return C_ILLEGAL;
@@ -396,17 +404,23 @@ static uint32_t expand_quadrant_2(uint16_t c) {
     if (rd == REG_ZERO)
       return C_ILLEGAL;
     return encode_i(lwsp_imm(c), REG_SP, FUNCT3_LW, rd, OPCODE_LOAD);
+  case C_FLDSP:
+    return encode_i(ldsp_imm(c), REG_SP, FUNCT3_FP_D, rd, OPCODE_LOAD_FP);
   case C_LDSP:
-    if (XLEN == 32 || rd == REG_ZERO)
+    if (XLEN == 32)
+      return encode_i(lwsp_imm(c), REG_SP, FUNCT3_FP_W, rd, OPCODE_LOAD_FP);
+    if (rd == REG_ZERO)
       return C_ILLEGAL;
     return encode_i(ldsp_imm(c), REG_SP, FUNCT3_LD, rd, OPCODE_LOAD);
   case C_JR_MV_ADD:
     return expand_jr_mv_add(c);
+  case C_FSDSP:
+    return encode_s(sdsp_imm(c), rs2, REG_SP, FUNCT3_FP_D, OPCODE_STORE_FP);
   case C_SWSP:
     return encode_s(swsp_imm(c), rs2, REG_SP, FUNCT3_SW, OPCODE_STORE);
   case C_SDSP:
     if (XLEN == 32)
-      return C_ILLEGAL;
+      return encode_s(swsp_imm(c), rs2, REG_SP, FUNCT3_FP_W, OPCODE_STORE_FP);
     return encode_s(sdsp_imm(c), rs2, REG_SP, FUNCT3_SD, OPCODE_STORE);
   }
   return C_ILLEGAL;

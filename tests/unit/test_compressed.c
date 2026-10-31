@@ -4,7 +4,7 @@
 
 // The C extension: each 16-bit instruction stands for one 32-bit instruction
 // and expands to it. The 16-bit encodings below come from the GNU assembler
-// (riscv64-linux-gnu-as -march=rv64imafdc / rv32imafc, objdump -M no-aliases),
+// (riscv64-linux-gnu-as -march=rv64imafdc / rv32imafdc, objdump -M no-aliases),
 // not from the emulator. A reserved encoding, or one that needs an extension
 // the hart lacks, expands to 0, which the decoder treats as illegal.
 
@@ -46,12 +46,12 @@ static void test_quadrant_0_funct3_100_is_reserved(void) {
   ASSERT_ILLEGAL(0x8000);
 }
 
-// The hart has no F or D: their compressed loads and stores are illegal.
-static void test_c_fld_and_c_fsd_are_illegal(void) {
-  ASSERT_ILLEGAL(0x2588); // c.fld fa0, 8(a1)
-  ASSERT_ILLEGAL(0xa588); // c.fsd fa0, 8(a1)
-  ASSERT_ILLEGAL(0x2522); // c.fldsp fa0, 8(sp)
-  ASSERT_ILLEGAL(0xa42a); // c.fsdsp fa0, 8(sp)
+// Double-precision loads and stores, on RV32 and RV64 alike.
+static void test_c_fld_and_c_fsd_expand_to_fld_and_fsd(void) {
+  ASSERT_EXPANDS(0x2588, FLD(10, 8, 11));  // c.fld fa0, 8(a1)
+  ASSERT_EXPANDS(0x3fe4, FLD(9, 248, 15)); // c.fld fs1, 248(a5)
+  ASSERT_EXPANDS(0xa588, FSD(10, 8, 11));  // c.fsd fa0, 8(a1)
+  ASSERT_EXPANDS(0xbfe4, FSD(9, 248, 15)); // c.fsd fs1, 248(a5)
 }
 
 // Quadrant 1 (bits 1:0 = 01): immediates, arithmetic and branches.
@@ -184,6 +184,13 @@ static void test_c_swsp_expands_to_sw_to_sp(void) {
   ASSERT_EXPANDS(0xc21a, SW(6, 4, 2));    // c.swsp t1, 4(sp)
 }
 
+static void test_c_fldsp_and_c_fsdsp_expand_to_fld_and_fsd(void) {
+  ASSERT_EXPANDS(0x2522, FLD(10, 8, 2));  // c.fldsp fa0, 8(sp)
+  ASSERT_EXPANDS(0x30fe, FLD(1, 504, 2)); // c.fldsp ft1, 504(sp)
+  ASSERT_EXPANDS(0xa42a, FSD(10, 8, 2));  // c.fsdsp fa0, 8(sp)
+  ASSERT_EXPANDS(0xbf86, FSD(1, 504, 2)); // c.fsdsp ft1, 504(sp)
+}
+
 #if XLEN == 64
 
 // RV64 spends the RV32 c.flw/c.fsw encodings on doubleword loads and stores,
@@ -227,11 +234,23 @@ static void test_shifts_reach_63(void) {
 #else
 
 // The same encodings as c.ld/c.sd/c.ldsp/c.sdsp on RV64.
-static void test_c_flw_and_c_fsw_are_illegal(void) {
-  ASSERT_ILLEGAL(0x61c8); // c.flw fa0, 4(a1)
-  ASSERT_ILLEGAL(0xe1c8); // c.fsw fa0, 4(a1)
-  ASSERT_ILLEGAL(0x6512); // c.flwsp fa0, 4(sp)
-  ASSERT_ILLEGAL(0xe22a); // c.fswsp fa0, 4(sp)
+static void test_c_flw_and_c_fsw_expand_to_flw_and_fsw(void) {
+  ASSERT_EXPANDS(0x61c8, FLW(10, 4, 11));  // c.flw fa0, 4(a1)
+  ASSERT_EXPANDS(0x7fe4, FLW(9, 124, 15)); // c.flw fs1, 124(a5)
+  ASSERT_EXPANDS(0xe1c8, FSW(10, 4, 11));  // c.fsw fa0, 4(a1)
+  ASSERT_EXPANDS(0xffe4, FSW(9, 124, 15)); // c.fsw fs1, 124(a5)
+}
+
+static void test_c_flwsp_and_c_fswsp_expand_to_flw_and_fsw(void) {
+  ASSERT_EXPANDS(0x757e, FLW(10, 252, 2)); // c.flwsp fa0, 252(sp)
+  ASSERT_EXPANDS(0x6092, FLW(1, 4, 2));    // c.flwsp ft1, 4(sp)
+  ASSERT_EXPANDS(0xffaa, FSW(10, 252, 2)); // c.fswsp fa0, 252(sp)
+  ASSERT_EXPANDS(0xe206, FSW(1, 4, 2));    // c.fswsp ft1, 4(sp)
+}
+
+// Unlike c.lwsp, c.flwsp may load f0.
+static void test_c_flwsp_into_f0_is_allowed(void) {
+  ASSERT_EXPANDS(0x6002, FLW(0, 0, 2)); // c.flwsp ft0, 0(sp)
 }
 
 // The c.addiw encoding on RV64.
@@ -263,7 +282,7 @@ int main(void) {
   RUN_TEST(test_c_lw_expands_to_lw);
   RUN_TEST(test_c_sw_expands_to_sw);
   RUN_TEST(test_quadrant_0_funct3_100_is_reserved);
-  RUN_TEST(test_c_fld_and_c_fsd_are_illegal);
+  RUN_TEST(test_c_fld_and_c_fsd_expand_to_fld_and_fsd);
   RUN_TEST(test_c_addi_expands_to_addi);
   RUN_TEST(test_c_nop_expands_to_nop);
   RUN_TEST(test_c_li_expands_to_addi_from_x0);
@@ -288,6 +307,7 @@ int main(void) {
   RUN_TEST(test_c_lwsp_expands_to_lw_from_sp);
   RUN_TEST(test_c_lwsp_into_x0_is_reserved);
   RUN_TEST(test_c_swsp_expands_to_sw_to_sp);
+  RUN_TEST(test_c_fldsp_and_c_fsdsp_expand_to_fld_and_fsd);
 #if XLEN == 64
   RUN_TEST(test_c_ld_and_c_sd_expand_to_doubleword_access);
   RUN_TEST(test_c_ldsp_and_c_sdsp_expand_to_doubleword_access);
@@ -297,7 +317,9 @@ int main(void) {
   RUN_TEST(test_word_arithmetic_expands);
   RUN_TEST(test_shifts_reach_63);
 #else
-  RUN_TEST(test_c_flw_and_c_fsw_are_illegal);
+  RUN_TEST(test_c_flw_and_c_fsw_expand_to_flw_and_fsw);
+  RUN_TEST(test_c_flwsp_and_c_fswsp_expand_to_flw_and_fsw);
+  RUN_TEST(test_c_flwsp_into_f0_is_allowed);
   RUN_TEST(test_c_jal_expands_to_jal_linking_ra);
   RUN_TEST(test_word_arithmetic_is_reserved);
   RUN_TEST(test_shifts_by_32_are_reserved);

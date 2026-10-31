@@ -14,6 +14,10 @@ struct Memory {
 Memory *memory_create(uxlen_t size) {
   Memory *mem = (Memory *)malloc(sizeof(Memory));
   mem->data = (uint8_t *)malloc(size * sizeof(uint8_t));
+  if (!mem->data) {
+    free(mem);
+    return NULL;
+  }
   mem->size = size;
   return mem;
 }

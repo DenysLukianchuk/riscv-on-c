@@ -50,6 +50,9 @@ enum CsrRegister {
 #if XLEN == 32
   CSR_REG_TIMEH = 0xC81,
 #endif
+  CSR_REG_FFLAGS = 0x001,
+  CSR_REG_FRM = 0x002,
+  CSR_REG_FCSR = 0x003,
 };
 
 enum CsrResult { CSR_OK, CSR_ILLEGAL };
@@ -68,6 +71,7 @@ enum Sstatus {
   SSTATUS_SIE_BIT = 0x2,
   SSTATUS_SPIE_BIT = 0x20,
   SSTATUS_SPP_BIT = 0x100,
+  SSTATUS_FS_BIT = 0x6000,
   SSTATUS_SUM_BIT = 0x40000,
   SSTATUS_MXR_BIT = 0x80000,
 };
@@ -94,6 +98,8 @@ static inline enum Privilege mstatus_mpp(uxlen_t mstatus) {
 #define MISA_S MISA_EXTENSION('S')
 #define MISA_A MISA_EXTENSION('A')
 #define MISA_C MISA_EXTENSION('C')
+#define MISA_F MISA_EXTENSION('F')
+#define MISA_D MISA_EXTENSION('D')
 
 #define SATP_MODE_BARE 0
 
@@ -129,5 +135,9 @@ void csr_reset(Csr *csr);
 uxlen_t satp_mode(uxlen_t value);
 void csr_set_time(Csr *csr, uint64_t mtime);
 bool csr_triggers_armed(Csr *csr);
+bool csr_fp_enabled(Csr *csr);
+void csr_set_fp_dirty(Csr *csr);
+uint8_t csr_get_frm(Csr *csr);
+void csr_accrue_fflags(Csr *csr, uint8_t flags);
 
 #endif // RISCV_CPU_CSR_H

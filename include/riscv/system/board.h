@@ -12,6 +12,8 @@
 
 #define UART_IRQ 10
 
+#define TIMEBASE_FREQUENCY 10000000
+
 // PLIC contexts of hart 0.
 #define M_CONTEXT 0
 #define S_CONTEXT 1

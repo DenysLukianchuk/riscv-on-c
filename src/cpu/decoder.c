@@ -74,6 +74,7 @@ static inline void extract_imm(struct Instruction *inst, uint32_t raw) {
 
   switch (inst->opcode) {
   case OPCODE_STORE:
+  case OPCODE_STORE_FP:
     inst->imm = sign_extend((bits(raw, S_IMM_11_5_HI, S_IMM_11_5_LO) << 5) |
                                 bits(raw, S_IMM_4_0_HI, S_IMM_4_0_LO),
                             S_IMM_WIDTH);

@@ -86,7 +86,14 @@ enum Opcode {
   OPCODE_OP_32 = 0x3B,
   OPCODE_SYSTEM = 0x73,
   OPCODE_FENCE = 0x0F,
-  OPCODE_AMO = 0x2F
+  OPCODE_AMO = 0x2F,
+  OPCODE_LOAD_FP = 0x07,
+  OPCODE_STORE_FP = 0x27,
+  OPCODE_OP_FP = 0x53,
+  OPCODE_MADD = 0x43,
+  OPCODE_MSUB = 0x47,
+  OPCODE_NMSUB = 0x4B,
+  OPCODE_NMADD = 0x4F,
 };
 
 enum Funct3_OP {
@@ -173,6 +180,36 @@ enum Funct7 {
   FUNCT7_MUL = 0x01,
   FUNCT7_SFENCE_VMA = 0x09,
   FUNCT7_SUB = 0x20,
+};
+
+enum Funct3_FP {
+  FUNCT3_FP_W = 0x2,
+  FUNCT3_FP_D = 0x3,
+  FUNCT3_FMV = 0x0,
+  FUNCT3_FCLASS = 0x1,
+  FUNCT3_FMAX = 0x1,
+  FUNCT3_RM_DYN = 0x7,
+};
+
+enum Funct5_FP {
+  FUNCT5_FADD = 0x00,
+  FUNCT5_FSUB = 0x01,
+  FUNCT5_FMUL = 0x02,
+  FUNCT5_FDIV = 0x03,
+  FUNCT5_FSGNJ = 0x04,
+  FUNCT5_FMIN_FMAX = 0x05,
+  FUNCT5_FCVT_FP = 0x08,
+  FUNCT5_FSQRT = 0x0B,
+  FUNCT5_FCMP = 0x14,
+  FUNCT5_FCVT_TO_INT = 0x18,
+  FUNCT5_FCVT_FROM_INT = 0x1A,
+  FUNCT5_FMV_X_FCLASS = 0x1C,
+  FUNCT5_FMV_F_X = 0x1E,
+};
+
+enum FpFormat {
+  FMT_S = 0,
+  FMT_D = 1,
 };
 
 struct Instruction instruction_decode(uint32_t raw);

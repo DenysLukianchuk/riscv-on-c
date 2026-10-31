@@ -2,6 +2,7 @@
 #define RISCV_CPU_CPU_H
 
 #include "riscv/cpu/csr.h"
+#include "riscv/cpu/fp_registers.h"
 #include "riscv/cpu/privilege.h"
 #include "riscv/cpu/registers.h"
 #include "riscv/system/bus.h"
@@ -10,6 +11,7 @@ typedef struct Cpu Cpu;
 
 Cpu *cpu_create(Bus *bus);
 Registers *cpu_get_registers(Cpu *cpu);
+FpRegisters *cpu_get_fp_registers(Cpu *cpu);
 uxlen_t cpu_get_pc(Cpu *cpu);
 void cpu_set_pc(Cpu *cpu, uxlen_t pc);
 Bus *cpu_get_bus(Cpu *cpu);
@@ -18,6 +20,8 @@ enum Privilege cpu_get_privilege(Cpu *cpu);
 void cpu_set_privilege(Cpu *cpu, enum Privilege privilege);
 uxlen_t cpu_get_amo_reservation(Cpu *cpu);
 void cpu_set_amo_reservation(Cpu *cpu, uxlen_t amo_reservation);
+bool cpu_waiting(Cpu *cpu);
+void cpu_set_waiting(Cpu *cpu, bool waiting);
 void cpu_destroy(Cpu *cpu);
 void cpu_reset(Cpu *cpu);
 

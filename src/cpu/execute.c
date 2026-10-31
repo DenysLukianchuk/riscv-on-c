@@ -1,7 +1,9 @@
 #include "riscv/cpu/execute.h"
+#include "riscv/cpu/fpu.h"
 #include "riscv/cpu/mmu.h"
 #include "riscv/cpu/trap.h"
 #include "riscv/util/bits.h"
+#include "riscv/util/float.h"
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -41,6 +43,10 @@ struct PhysicalAccess {
   uint64_t paddr[2];
   unsigned size, first;
 };
+
+static inline uint8_t funct5_extract(uint8_t funct7) { return funct7 >> 2; }
+
+static inline uint8_t fmt_extract(uint8_t funct7) { return bits(funct7, 1, 0); }
 
 static bool crosses_page(const struct PhysicalAccess *pa) {
   return pa->first < pa->size;
@@ -242,6 +248,307 @@ static enum ExecuteResult execute_op(Cpu *cpu, const struct Instruction *inst,
   return EXECUTE_OK;
 }
 
+static bool fp_enabled(Cpu *cpu) { return csr_fp_enabled(cpu_get_csr(cpu)); }
+
+static uint64_t read_f(Cpu *cpu, uint8_t index) {
+  return fp_registers_read(cpu_get_fp_registers(cpu), index);
+}
+
+static void write_f(Cpu *cpu, uint8_t index, uint64_t value) {
+  fp_registers_write(cpu_get_fp_registers(cpu), index, value);
+  csr_set_fp_dirty(cpu_get_csr(cpu));
+}
+
+static uint32_t read_single(Cpu *cpu, uint8_t index) {
+  return unbox_single(read_f(cpu, index));
+}
+
+static void write_single(Cpu *cpu, uint8_t index, uint32_t value) {
+  write_f(cpu, index, nan_box(value));
+}
+
+static bool resolve_rm(Cpu *cpu, uint8_t funct3, enum FpRounding *rm) {
+  uint8_t mode =
+      funct3 == FUNCT3_RM_DYN ? csr_get_frm(cpu_get_csr(cpu)) : funct3;
+  if (mode > FP_RMM)
+    return false;
+  *rm = (enum FpRounding)mode;
+  return true;
+}
+
+static uint64_t read_operand(Cpu *cpu, uint8_t fmt, uint8_t index) {
+  return fmt == FMT_S ? read_single(cpu, index) : read_f(cpu, index);
+}
+
+static void write_result(Cpu *cpu, uint8_t fmt, uint8_t index, uint64_t value) {
+  if (fmt == FMT_S)
+    write_single(cpu, index, value);
+  else
+    write_f(cpu, index, value);
+}
+
+static void accrue(Cpu *cpu, uint8_t flags) {
+  csr_accrue_fflags(cpu_get_csr(cpu), flags);
+}
+
+static enum FpOp arith_op(uint8_t funct5) {
+  switch (funct5) {
+  case FUNCT5_FSUB:
+    return FP_SUB;
+  case FUNCT5_FMUL:
+    return FP_MUL;
+  case FUNCT5_FDIV:
+    return FP_DIV;
+  }
+  return FP_ADD;
+}
+
+static enum ExecuteResult execute_arith(Cpu *cpu,
+                                        const struct Instruction *inst,
+                                        uint8_t fmt, uxlen_t *next_pc) {
+  enum FpRounding rm;
+  if (!resolve_rm(cpu, inst->funct3, &rm))
+    return illegal_instruction(cpu, inst, next_pc);
+
+  enum FpOp op = arith_op(funct5_extract(inst->funct7));
+  uint64_t a = read_operand(cpu, fmt, inst->rs1);
+  uint64_t b = read_operand(cpu, fmt, inst->rs2);
+  uint8_t flags;
+  uint64_t result = fmt == FMT_S ? fpu_arith_s(op, a, b, rm, &flags)
+                                 : fpu_arith_d(op, a, b, rm, &flags);
+  write_result(cpu, fmt, inst->rd, result);
+  accrue(cpu, flags);
+  return EXECUTE_OK;
+}
+
+static enum ExecuteResult execute_fsqrt(Cpu *cpu,
+                                        const struct Instruction *inst,
+                                        uint8_t fmt, uxlen_t *next_pc) {
+  enum FpRounding rm;
+  if (inst->rs2 != 0 || !resolve_rm(cpu, inst->funct3, &rm))
+    return illegal_instruction(cpu, inst, next_pc);
+
+  uint64_t a = read_operand(cpu, fmt, inst->rs1);
+  uint8_t flags;
+  uint64_t result =
+      fmt == FMT_S ? fpu_sqrt_s(a, rm, &flags) : fpu_sqrt_d(a, rm, &flags);
+  write_result(cpu, fmt, inst->rd, result);
+  accrue(cpu, flags);
+  return EXECUTE_OK;
+}
+
+static enum ExecuteResult execute_fsgnj(Cpu *cpu,
+                                        const struct Instruction *inst,
+                                        uint8_t fmt, uxlen_t *next_pc) {
+  if (inst->funct3 > SIGN_OF_A_XOR_B)
+    return illegal_instruction(cpu, inst, next_pc);
+
+  uint64_t result =
+      sign_inject(inst->funct3, read_operand(cpu, fmt, inst->rs1),
+                  read_operand(cpu, fmt, inst->rs2),
+                  fmt == FMT_S ? SINGLE_SIGN_BIT : DOUBLE_SIGN_BIT);
+  write_result(cpu, fmt, inst->rd, result);
+  return EXECUTE_OK;
+}
+
+static enum ExecuteResult execute_fmin_fmax(Cpu *cpu,
+                                            const struct Instruction *inst,
+                                            uint8_t fmt, uxlen_t *next_pc) {
+  if (inst->funct3 > FUNCT3_FMAX)
+    return illegal_instruction(cpu, inst, next_pc);
+
+  bool max = inst->funct3 == FUNCT3_FMAX;
+  uint64_t a = read_operand(cpu, fmt, inst->rs1);
+  uint64_t b = read_operand(cpu, fmt, inst->rs2);
+  uint8_t flags;
+  uint64_t result = fmt == FMT_S ? fpu_min_max_s(a, b, max, &flags)
+                                 : fpu_min_max_d(a, b, max, &flags);
+  write_result(cpu, fmt, inst->rd, result);
+  accrue(cpu, flags);
+  return EXECUTE_OK;
+}
+
+static enum ExecuteResult execute_fcmp(Cpu *cpu, const struct Instruction *inst,
+                                       uint8_t fmt, uxlen_t *next_pc) {
+  if (inst->funct3 > FP_EQ)
+    return illegal_instruction(cpu, inst, next_pc);
+
+  enum FpCompare cmp = inst->funct3;
+  uint64_t a = read_operand(cpu, fmt, inst->rs1);
+  uint64_t b = read_operand(cpu, fmt, inst->rs2);
+  uint8_t flags;
+  bool result = fmt == FMT_S ? fpu_compare_s(cmp, a, b, &flags)
+                             : fpu_compare_d(cmp, a, b, &flags);
+  registers_write(cpu_get_registers(cpu), inst->rd, result);
+  accrue(cpu, flags);
+  return EXECUTE_OK;
+}
+
+static enum ExecuteResult execute_fcvt_fp(Cpu *cpu,
+                                          const struct Instruction *inst,
+                                          uint8_t fmt, uxlen_t *next_pc) {
+  enum FpRounding rm;
+  uint8_t source = fmt == FMT_S ? FMT_D : FMT_S;
+  if (inst->rs2 != source || !resolve_rm(cpu, inst->funct3, &rm))
+    return illegal_instruction(cpu, inst, next_pc);
+
+  uint64_t a = read_operand(cpu, source, inst->rs1);
+  uint8_t flags;
+  uint64_t result =
+      fmt == FMT_S ? fpu_d_to_s(a, rm, &flags) : fpu_s_to_d(a, &flags);
+  write_result(cpu, fmt, inst->rd, result);
+  accrue(cpu, flags);
+  return EXECUTE_OK;
+}
+
+static bool int_type(uint8_t rs2, enum FpInt *type) {
+  if (rs2 > FP_INT_LU || (XLEN == 32 && rs2 >= FP_INT_L))
+    return false;
+  *type = (enum FpInt)rs2;
+  return true;
+}
+
+static enum ExecuteResult execute_fcvt_to_int(Cpu *cpu,
+                                              const struct Instruction *inst,
+                                              uint8_t fmt, uxlen_t *next_pc) {
+  enum FpRounding rm;
+  enum FpInt type;
+  if (!int_type(inst->rs2, &type) || !resolve_rm(cpu, inst->funct3, &rm))
+    return illegal_instruction(cpu, inst, next_pc);
+
+  uint64_t a = read_operand(cpu, fmt, inst->rs1);
+  uint8_t flags;
+  uint64_t result = fmt == FMT_S ? fpu_s_to_int(a, type, rm, &flags)
+                                 : fpu_d_to_int(a, type, rm, &flags);
+  registers_write(cpu_get_registers(cpu), inst->rd, (uxlen_t)result);
+  accrue(cpu, flags);
+  return EXECUTE_OK;
+}
+
+static enum ExecuteResult execute_fcvt_from_int(Cpu *cpu,
+                                                const struct Instruction *inst,
+                                                uint8_t fmt, uxlen_t *next_pc) {
+  enum FpRounding rm;
+  enum FpInt type;
+  if (!int_type(inst->rs2, &type) || !resolve_rm(cpu, inst->funct3, &rm))
+    return illegal_instruction(cpu, inst, next_pc);
+
+  uint64_t value = registers_read(cpu_get_registers(cpu), inst->rs1);
+  uint8_t flags;
+  uint64_t result = fmt == FMT_S ? fpu_int_to_s(value, type, rm, &flags)
+                                 : fpu_int_to_d(value, type, rm, &flags);
+  write_result(cpu, fmt, inst->rd, result);
+  accrue(cpu, flags);
+  return EXECUTE_OK;
+}
+
+static enum ExecuteResult execute_fmv_x_fclass(Cpu *cpu,
+                                               const struct Instruction *inst,
+                                               uint8_t fmt, uxlen_t *next_pc) {
+  if (inst->rs2 != 0)
+    return illegal_instruction(cpu, inst, next_pc);
+
+  uxlen_t result;
+  if (inst->funct3 == FUNCT3_FMV && fmt == FMT_S)
+    result = sign_extend((uint32_t)read_f(cpu, inst->rs1), 32);
+#if XLEN == 64
+  else if (inst->funct3 == FUNCT3_FMV && fmt == FMT_D)
+    result = read_f(cpu, inst->rs1);
+#endif
+  else if (inst->funct3 == FUNCT3_FCLASS && fmt == FMT_S)
+    result =
+        fclass(read_single(cpu, inst->rs1), SINGLE_EXP_BITS, SINGLE_MANT_BITS);
+  else if (inst->funct3 == FUNCT3_FCLASS && fmt == FMT_D)
+    result = fclass(read_f(cpu, inst->rs1), DOUBLE_EXP_BITS, DOUBLE_MANT_BITS);
+  else
+    return illegal_instruction(cpu, inst, next_pc);
+
+  registers_write(cpu_get_registers(cpu), inst->rd, result);
+  return EXECUTE_OK;
+}
+
+static enum ExecuteResult execute_fmv_f(Cpu *cpu,
+                                        const struct Instruction *inst,
+                                        uint8_t fmt, uxlen_t *next_pc) {
+  if (inst->rs2 != 0 || inst->funct3 != FUNCT3_FMV)
+    return illegal_instruction(cpu, inst, next_pc);
+
+  uxlen_t value = registers_read(cpu_get_registers(cpu), inst->rs1);
+  if (fmt == FMT_S)
+    write_single(cpu, inst->rd, (uint32_t)value);
+#if XLEN == 64
+  else if (fmt == FMT_D)
+    write_f(cpu, inst->rd, value);
+#endif
+  else
+    return illegal_instruction(cpu, inst, next_pc);
+  return EXECUTE_OK;
+}
+
+static bool fp_format_valid(Cpu *cpu, uint8_t fmt) {
+  return fp_enabled(cpu) && (fmt == FMT_S || fmt == FMT_D);
+}
+
+static enum ExecuteResult
+execute_fp_op(Cpu *cpu, const struct Instruction *inst, uxlen_t *next_pc) {
+  uint8_t fmt = fmt_extract(inst->funct7);
+  if (!fp_format_valid(cpu, fmt))
+    return illegal_instruction(cpu, inst, next_pc);
+
+  switch (funct5_extract(inst->funct7)) {
+  case FUNCT5_FADD:
+  case FUNCT5_FSUB:
+  case FUNCT5_FMUL:
+  case FUNCT5_FDIV:
+    return execute_arith(cpu, inst, fmt, next_pc);
+  case FUNCT5_FSQRT:
+    return execute_fsqrt(cpu, inst, fmt, next_pc);
+  case FUNCT5_FSGNJ:
+    return execute_fsgnj(cpu, inst, fmt, next_pc);
+  case FUNCT5_FMIN_FMAX:
+    return execute_fmin_fmax(cpu, inst, fmt, next_pc);
+  case FUNCT5_FCVT_FP:
+    return execute_fcvt_fp(cpu, inst, fmt, next_pc);
+  case FUNCT5_FCMP:
+    return execute_fcmp(cpu, inst, fmt, next_pc);
+  case FUNCT5_FCVT_TO_INT:
+    return execute_fcvt_to_int(cpu, inst, fmt, next_pc);
+  case FUNCT5_FCVT_FROM_INT:
+    return execute_fcvt_from_int(cpu, inst, fmt, next_pc);
+  case FUNCT5_FMV_X_FCLASS:
+    return execute_fmv_x_fclass(cpu, inst, fmt, next_pc);
+  case FUNCT5_FMV_F_X:
+    return execute_fmv_f(cpu, inst, fmt, next_pc);
+  default:
+    return illegal_instruction(cpu, inst, next_pc);
+  }
+}
+
+// R4 format: rs3 sits where funct5 would.
+static enum ExecuteResult execute_fma(Cpu *cpu, const struct Instruction *inst,
+                                      uxlen_t *next_pc) {
+  uint8_t fmt = fmt_extract(inst->funct7);
+  enum FpRounding rm;
+  if (!fp_format_valid(cpu, fmt) || !resolve_rm(cpu, inst->funct3, &rm))
+    return illegal_instruction(cpu, inst, next_pc);
+
+  uint64_t sign = fmt == FMT_S ? SINGLE_SIGN_BIT : DOUBLE_SIGN_BIT;
+  uint64_t a = read_operand(cpu, fmt, inst->rs1);
+  uint64_t b = read_operand(cpu, fmt, inst->rs2);
+  uint64_t c = read_operand(cpu, fmt, funct5_extract(inst->funct7));
+  if (inst->opcode == OPCODE_NMSUB || inst->opcode == OPCODE_NMADD)
+    a ^= sign;
+  if (inst->opcode == OPCODE_MSUB || inst->opcode == OPCODE_NMADD)
+    c ^= sign;
+
+  uint8_t flags;
+  uint64_t result = fmt == FMT_S ? fpu_fma_s(a, b, c, rm, &flags)
+                                 : fpu_fma_d(a, b, c, rm, &flags);
+  write_result(cpu, fmt, inst->rd, result);
+  accrue(cpu, flags);
+  return EXECUTE_OK;
+}
+
 #if XLEN == 64
 static bool op_32_valid(uint8_t funct3, uint8_t funct7) {
   if (funct7 == FUNCT7_MUL)
@@ -380,9 +687,39 @@ static enum ExecuteResult read_virtual(Cpu *cpu, uxlen_t vaddr, unsigned size,
   return EXECUTE_OK;
 }
 
+static uint8_t fp_access_size(uint8_t funct3) {
+  switch (funct3) {
+  case FUNCT3_FP_W:
+    return 4;
+  case FUNCT3_FP_D:
+    return 8;
+  default:
+    return 0;
+  }
+}
+
+static enum ExecuteResult load_memory(Cpu *cpu, const struct Instruction *inst,
+                                      uint8_t size, uint64_t *value,
+                                      uxlen_t *next_pc) {
+  uxlen_t addr = registers_read(cpu_get_registers(cpu), inst->rs1) + inst->imm;
+  uxlen_t tval;
+  if (load_trigger_hit(cpu, size, addr, NULL, &tval)) {
+    return trap(cpu, TRAP_BREAKPOINT, tval, next_pc);
+  }
+
+  enum ExecuteResult read_result =
+      read_virtual(cpu, addr, size, value, MMU_LOAD, next_pc);
+  if (read_result != EXECUTE_OK)
+    return read_result;
+
+  uxlen_t data = (uxlen_t)*value;
+  if (load_trigger_hit(cpu, size, addr, &data, &tval))
+    return trap(cpu, TRAP_BREAKPOINT, tval, next_pc);
+  return EXECUTE_OK;
+}
+
 static enum ExecuteResult execute_load(Cpu *cpu, const struct Instruction *inst,
                                        uxlen_t *next_pc) {
-  uxlen_t addr = registers_read(cpu_get_registers(cpu), inst->rs1) + inst->imm;
   uint8_t size = 0;
   switch (inst->funct3) {
   case FUNCT3_LB:
@@ -407,20 +744,11 @@ static enum ExecuteResult execute_load(Cpu *cpu, const struct Instruction *inst,
   default:
     return illegal_instruction(cpu, inst, next_pc);
   }
-  uxlen_t tval;
-  if (load_trigger_hit(cpu, size, addr, NULL, &tval)) {
-    return trap(cpu, TRAP_BREAKPOINT, tval, next_pc);
-  }
 
   uint64_t val;
-  enum ExecuteResult read_result =
-      read_virtual(cpu, addr, size, &val, MMU_LOAD, next_pc);
-  if (read_result != EXECUTE_OK)
-    return read_result;
-
-  uxlen_t data = (uxlen_t)val;
-  if (load_trigger_hit(cpu, size, addr, &data, &tval))
-    return trap(cpu, TRAP_BREAKPOINT, tval, next_pc);
+  enum ExecuteResult load_result = load_memory(cpu, inst, size, &val, next_pc);
+  if (load_result != EXECUTE_OK)
+    return load_result;
 
   if (inst->funct3 == FUNCT3_LBU || inst->funct3 == FUNCT3_LHU ||
       inst->funct3 == FUNCT3_LWU || inst->funct3 == FUNCT3_LD)
@@ -429,6 +757,24 @@ static enum ExecuteResult execute_load(Cpu *cpu, const struct Instruction *inst,
     val = sign_extend((uxlen_t)val, size * BITS_PER_BYTE);
 
   registers_write(cpu_get_registers(cpu), inst->rd, val);
+  return EXECUTE_OK;
+}
+
+static enum ExecuteResult
+execute_fp_load(Cpu *cpu, const struct Instruction *inst, uxlen_t *next_pc) {
+  uint8_t size = fp_access_size(inst->funct3);
+  if (!fp_enabled(cpu) || size == 0)
+    return illegal_instruction(cpu, inst, next_pc);
+
+  uint64_t val;
+  enum ExecuteResult load_result = load_memory(cpu, inst, size, &val, next_pc);
+  if (load_result != EXECUTE_OK)
+    return load_result;
+
+  if (inst->funct3 == FUNCT3_FP_W)
+    write_single(cpu, inst->rd, (uint32_t)val);
+  else
+    write_f(cpu, inst->rd, val);
   return EXECUTE_OK;
 }
 
@@ -455,9 +801,23 @@ static enum ExecuteResult write_virtual(Cpu *cpu, uxlen_t vaddr, unsigned size,
   return EXECUTE_OK;
 }
 
+static enum ExecuteResult store_memory(Cpu *cpu, const struct Instruction *inst,
+                                       unsigned size, uint64_t value,
+                                       uxlen_t *next_pc) {
+  uxlen_t addr = registers_read(cpu_get_registers(cpu), inst->rs1) + inst->imm;
+  uxlen_t tval;
+  if (store_trigger_hit(cpu, size, addr, NULL, &tval)) {
+    return trap(cpu, TRAP_BREAKPOINT, tval, next_pc);
+  }
+  uxlen_t data = truncate_to_size(value, size);
+  if (store_trigger_hit(cpu, size, addr, &data, &tval)) {
+    return trap(cpu, TRAP_BREAKPOINT, tval, next_pc);
+  }
+  return write_virtual(cpu, addr, size, value, MMU_STORE, next_pc);
+}
+
 static enum ExecuteResult
 execute_store(Cpu *cpu, const struct Instruction *inst, uxlen_t *next_pc) {
-  uxlen_t addr = registers_read(cpu_get_registers(cpu), inst->rs1) + inst->imm;
   uint8_t size = 0;
   switch (inst->funct3) {
   case FUNCT3_SB:
@@ -477,17 +837,18 @@ execute_store(Cpu *cpu, const struct Instruction *inst, uxlen_t *next_pc) {
   default:
     return illegal_instruction(cpu, inst, next_pc);
   }
-  uxlen_t tval;
-  if (store_trigger_hit(cpu, size, addr, NULL, &tval)) {
-    return trap(cpu, TRAP_BREAKPOINT, tval, next_pc);
-  }
-  uint64_t val = registers_read(cpu_get_registers(cpu), inst->rs2);
-  uxlen_t data = truncate_to_size(val, size);
-  if (store_trigger_hit(cpu, size, addr, &data, &tval)) {
-    return trap(cpu, TRAP_BREAKPOINT, tval, next_pc);
-  }
 
-  return write_virtual(cpu, addr, size, val, MMU_STORE, next_pc);
+  uint64_t val = registers_read(cpu_get_registers(cpu), inst->rs2);
+  return store_memory(cpu, inst, size, val, next_pc);
+}
+
+static enum ExecuteResult
+execute_fp_store(Cpu *cpu, const struct Instruction *inst, uxlen_t *next_pc) {
+  uint8_t size = fp_access_size(inst->funct3);
+  if (!fp_enabled(cpu) || size == 0)
+    return illegal_instruction(cpu, inst, next_pc);
+
+  return store_memory(cpu, inst, size, read_f(cpu, inst->rs2), next_pc);
 }
 
 static bool allowed_below_m(Cpu *cpu, enum Privilege privilege,
@@ -502,6 +863,7 @@ static enum ExecuteResult execute_wfi(Cpu *cpu, const struct Instruction *inst,
                                       uxlen_t *next_pc) {
   if (!allowed_below_m(cpu, privilege, MSTATUS_TW_BIT))
     return illegal_instruction(cpu, inst, next_pc);
+  cpu_set_waiting(cpu, true);
   return EXECUTE_OK;
 }
 
@@ -735,7 +1097,7 @@ static enum ExecuteResult execute_amo(Cpu *cpu, const struct Instruction *inst,
   uint8_t size;
   if (!amo_size(inst->funct3, &size))
     return illegal_instruction(cpu, inst, next_pc);
-  uint8_t funct5 = bits(inst->funct7, 6, 2);
+  uint8_t funct5 = funct5_extract(inst->funct7);
   if (!is_amo_funct5_valid(funct5))
     return illegal_instruction(cpu, inst, next_pc);
 
@@ -809,6 +1171,9 @@ enum ExecuteResult cpu_execute(Cpu *cpu, const struct Instruction *inst) {
   case OPCODE_OP:
     status = execute_op(cpu, inst, &next_pc);
     break;
+  case OPCODE_OP_FP:
+    status = execute_fp_op(cpu, inst, &next_pc);
+    break;
   case OPCODE_LUI:
     status = execute_lui(cpu, inst);
     break;
@@ -827,8 +1192,20 @@ enum ExecuteResult cpu_execute(Cpu *cpu, const struct Instruction *inst) {
   case OPCODE_LOAD:
     status = execute_load(cpu, inst, &next_pc);
     break;
+  case OPCODE_LOAD_FP:
+    status = execute_fp_load(cpu, inst, &next_pc);
+    break;
   case OPCODE_STORE:
     status = execute_store(cpu, inst, &next_pc);
+    break;
+  case OPCODE_MADD:
+  case OPCODE_MSUB:
+  case OPCODE_NMSUB:
+  case OPCODE_NMADD:
+    status = execute_fma(cpu, inst, &next_pc);
+    break;
+  case OPCODE_STORE_FP:
+    status = execute_fp_store(cpu, inst, &next_pc);
     break;
   case OPCODE_SYSTEM:
     status = execute_system(cpu, inst, &next_pc);

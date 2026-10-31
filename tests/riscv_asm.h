@@ -9,15 +9,22 @@
 #include <stdint.h>
 
 #define ASM_LOAD 0x03u
+#define ASM_LOAD_FP 0x07u
 #define ASM_MISC_MEM 0x0Fu
 #define ASM_OP_IMM 0x13u
 #define ASM_AUIPC 0x17u
 #define ASM_OP_IMM_32 0x1Bu
 #define ASM_STORE 0x23u
+#define ASM_STORE_FP 0x27u
 #define ASM_AMO 0x2Fu
 #define ASM_OP 0x33u
 #define ASM_LUI 0x37u
 #define ASM_OP_32 0x3Bu
+#define ASM_OP_FP 0x53u
+#define ASM_MADD 0x43u
+#define ASM_MSUB 0x47u
+#define ASM_NMSUB 0x4Bu
+#define ASM_NMADD 0x4Fu
 #define ASM_BRANCH 0x63u
 #define ASM_JALR 0x67u
 #define ASM_JAL 0x6Fu
@@ -105,6 +112,80 @@
 #define SLLW(rd, rs1, rs2) RV_R(0x00, rs2, rs1, 1, rd, ASM_OP_32)
 #define SRLW(rd, rs1, rs2) RV_R(0x00, rs2, rs1, 5, rd, ASM_OP_32)
 #define SRAW(rd, rs1, rs2) RV_R(0x20, rs2, rs1, 5, rd, ASM_OP_32)
+
+// F and D loads and stores: rd and rs2 name f registers, rs1 an x register.
+#define FLW(rd, imm, rs1) RV_I(imm, rs1, 2, rd, ASM_LOAD_FP)
+#define FLD(rd, imm, rs1) RV_I(imm, rs1, 3, rd, ASM_LOAD_FP)
+#define FSW(rs2, imm, rs1) RV_S(imm, rs2, rs1, 2, ASM_STORE_FP)
+#define FSD(rs2, imm, rs1) RV_S(imm, rs2, rs1, 3, ASM_STORE_FP)
+
+// OP-FP: funct7 is funct5 followed by the format, 0 for single and 1 for
+// double. rd and rs1 name f or x registers depending on the instruction.
+#define FSGNJ_S(rd, rs1, rs2) RV_R(0x10, rs2, rs1, 0, rd, ASM_OP_FP)
+#define FSGNJN_S(rd, rs1, rs2) RV_R(0x10, rs2, rs1, 1, rd, ASM_OP_FP)
+#define FSGNJX_S(rd, rs1, rs2) RV_R(0x10, rs2, rs1, 2, rd, ASM_OP_FP)
+#define FSGNJ_D(rd, rs1, rs2) RV_R(0x11, rs2, rs1, 0, rd, ASM_OP_FP)
+#define FSGNJN_D(rd, rs1, rs2) RV_R(0x11, rs2, rs1, 1, rd, ASM_OP_FP)
+#define FSGNJX_D(rd, rs1, rs2) RV_R(0x11, rs2, rs1, 2, rd, ASM_OP_FP)
+#define FMV_X_W(rd, rs1) RV_R(0x70, 0, rs1, 0, rd, ASM_OP_FP)
+#define FCLASS_S(rd, rs1) RV_R(0x70, 0, rs1, 1, rd, ASM_OP_FP)
+#define FMV_W_X(rd, rs1) RV_R(0x78, 0, rs1, 0, rd, ASM_OP_FP)
+#define FMV_X_D(rd, rs1) RV_R(0x71, 0, rs1, 0, rd, ASM_OP_FP)
+#define FCLASS_D(rd, rs1) RV_R(0x71, 0, rs1, 1, rd, ASM_OP_FP)
+#define FMV_D_X(rd, rs1) RV_R(0x79, 0, rs1, 0, rd, ASM_OP_FP)
+// Arithmetic: funct3 is the rounding mode rm.
+#define FADD_S(rd, rs1, rs2, rm) RV_R(0x00, rs2, rs1, rm, rd, ASM_OP_FP)
+#define FSUB_S(rd, rs1, rs2, rm) RV_R(0x04, rs2, rs1, rm, rd, ASM_OP_FP)
+#define FADD_D(rd, rs1, rs2, rm) RV_R(0x01, rs2, rs1, rm, rd, ASM_OP_FP)
+#define FSUB_D(rd, rs1, rs2, rm) RV_R(0x05, rs2, rs1, rm, rd, ASM_OP_FP)
+#define FMUL_S(rd, rs1, rs2, rm) RV_R(0x08, rs2, rs1, rm, rd, ASM_OP_FP)
+#define FMUL_D(rd, rs1, rs2, rm) RV_R(0x09, rs2, rs1, rm, rd, ASM_OP_FP)
+#define FDIV_S(rd, rs1, rs2, rm) RV_R(0x0C, rs2, rs1, rm, rd, ASM_OP_FP)
+#define FDIV_D(rd, rs1, rs2, rm) RV_R(0x0D, rs2, rs1, rm, rd, ASM_OP_FP)
+#define FSQRT_S(rd, rs1, rm) RV_R(0x2C, 0, rs1, rm, rd, ASM_OP_FP)
+#define FSQRT_D(rd, rs1, rm) RV_R(0x2D, 0, rs1, rm, rd, ASM_OP_FP)
+#define FMIN_S(rd, rs1, rs2) RV_R(0x14, rs2, rs1, 0, rd, ASM_OP_FP)
+#define FMAX_S(rd, rs1, rs2) RV_R(0x14, rs2, rs1, 1, rd, ASM_OP_FP)
+#define FMIN_D(rd, rs1, rs2) RV_R(0x15, rs2, rs1, 0, rd, ASM_OP_FP)
+#define FMAX_D(rd, rs1, rs2) RV_R(0x15, rs2, rs1, 1, rd, ASM_OP_FP)
+// Comparisons write 0 or 1 to the x register rd.
+#define FLE_S(rd, rs1, rs2) RV_R(0x50, rs2, rs1, 0, rd, ASM_OP_FP)
+#define FLT_S(rd, rs1, rs2) RV_R(0x50, rs2, rs1, 1, rd, ASM_OP_FP)
+#define FEQ_S(rd, rs1, rs2) RV_R(0x50, rs2, rs1, 2, rd, ASM_OP_FP)
+#define FLE_D(rd, rs1, rs2) RV_R(0x51, rs2, rs1, 0, rd, ASM_OP_FP)
+#define FLT_D(rd, rs1, rs2) RV_R(0x51, rs2, rs1, 1, rd, ASM_OP_FP)
+#define FEQ_D(rd, rs1, rs2) RV_R(0x51, rs2, rs1, 2, rd, ASM_OP_FP)
+// Conversions. To an integer: rd is an x register and rs2 picks the type,
+// 0 int32, 1 uint32, 2 int64, 3 uint64. From an integer: rs1 is an x register.
+#define FCVT_W_S(rd, rs1, rm) RV_R(0x60, 0, rs1, rm, rd, ASM_OP_FP)
+#define FCVT_WU_S(rd, rs1, rm) RV_R(0x60, 1, rs1, rm, rd, ASM_OP_FP)
+#define FCVT_L_S(rd, rs1, rm) RV_R(0x60, 2, rs1, rm, rd, ASM_OP_FP)
+#define FCVT_LU_S(rd, rs1, rm) RV_R(0x60, 3, rs1, rm, rd, ASM_OP_FP)
+#define FCVT_W_D(rd, rs1, rm) RV_R(0x61, 0, rs1, rm, rd, ASM_OP_FP)
+#define FCVT_WU_D(rd, rs1, rm) RV_R(0x61, 1, rs1, rm, rd, ASM_OP_FP)
+#define FCVT_L_D(rd, rs1, rm) RV_R(0x61, 2, rs1, rm, rd, ASM_OP_FP)
+#define FCVT_LU_D(rd, rs1, rm) RV_R(0x61, 3, rs1, rm, rd, ASM_OP_FP)
+#define FCVT_S_W(rd, rs1, rm) RV_R(0x68, 0, rs1, rm, rd, ASM_OP_FP)
+#define FCVT_S_WU(rd, rs1, rm) RV_R(0x68, 1, rs1, rm, rd, ASM_OP_FP)
+#define FCVT_S_L(rd, rs1, rm) RV_R(0x68, 2, rs1, rm, rd, ASM_OP_FP)
+#define FCVT_S_LU(rd, rs1, rm) RV_R(0x68, 3, rs1, rm, rd, ASM_OP_FP)
+#define FCVT_D_W(rd, rs1, rm) RV_R(0x69, 0, rs1, rm, rd, ASM_OP_FP)
+#define FCVT_D_WU(rd, rs1, rm) RV_R(0x69, 1, rs1, rm, rd, ASM_OP_FP)
+#define FCVT_D_L(rd, rs1, rm) RV_R(0x69, 2, rs1, rm, rd, ASM_OP_FP)
+#define FCVT_D_LU(rd, rs1, rm) RV_R(0x69, 3, rs1, rm, rd, ASM_OP_FP)
+#define FCVT_S_D(rd, rs1, rm) RV_R(0x20, 1, rs1, rm, rd, ASM_OP_FP)
+#define FCVT_D_S(rd, rs1, rm) RV_R(0x21, 0, rs1, rm, rd, ASM_OP_FP)
+// Fused multiply-add, R4 format: rs3 and fmt (0 single, 1 double) fill the
+// funct7 field.
+#define RV_R4(rs3, fmt, rs2, rs1, rm, rd, opcode)                              \
+  RV_R((uint32_t)(rs3) << 2 | (fmt), rs2, rs1, rm, rd, opcode)
+#define FMADD_S(rd, rs1, rs2, rs3, rm) RV_R4(rs3, 0, rs2, rs1, rm, rd, ASM_MADD)
+#define FMSUB_S(rd, rs1, rs2, rs3, rm) RV_R4(rs3, 0, rs2, rs1, rm, rd, ASM_MSUB)
+#define FNMSUB_S(rd, rs1, rs2, rs3, rm)                                        \
+  RV_R4(rs3, 0, rs2, rs1, rm, rd, ASM_NMSUB)
+#define FNMADD_S(rd, rs1, rs2, rs3, rm)                                        \
+  RV_R4(rs3, 0, rs2, rs1, rm, rd, ASM_NMADD)
+#define FMADD_D(rd, rs1, rs2, rs3, rm) RV_R4(rs3, 1, rs2, rs1, rm, rd, ASM_MADD)
 
 #define NOP ADDI(0, 0, 0)
 #define LI(rd, imm) ADDI(rd, 0, imm)

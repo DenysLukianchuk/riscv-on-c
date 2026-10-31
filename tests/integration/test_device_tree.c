@@ -6,11 +6,11 @@
 // bindings follow the Linux and OpenSBI documentation for QEMU's virt board.
 #define RAM_SIZE 0x10000
 #if XLEN == 64
-#define ISA "rv64imac_zicsr_zifencei"
+#define ISA "rv64imafdc_zicsr_zifencei"
 #define ISA_BASE "rv64i"
 #define MMU_TYPE "riscv,sv39"
 #else
-#define ISA "rv32imac_zicsr_zifencei"
+#define ISA "rv32imafdc_zicsr_zifencei"
 #define ISA_BASE "rv32i"
 #define MMU_TYPE "riscv,sv32"
 #endif
@@ -113,8 +113,8 @@ static void test_cpu_node_names_its_base_isa(void) {
 }
 
 static void test_cpu_node_lists_its_extensions(void) {
-  const char *implemented[] = {"i",     "m",        "a",      "c",
-                               "zicsr", "zifencei", "zicntr", "svade"};
+  const char *implemented[] = {"i", "m",     "a",        "f",      "d",
+                               "c", "zicsr", "zifencei", "zicntr", "svade"};
   for (unsigned i = 0; i < sizeof implemented / sizeof implemented[0]; i++)
     TEST_ASSERT_TRUE_MESSAGE(
         has_string(CPU, "riscv,isa-extensions", implemented[i]),
@@ -123,7 +123,7 @@ static void test_cpu_node_lists_its_extensions(void) {
 
 // Claiming an extension the hart lacks would let Linux use its instructions.
 static void test_cpu_node_lists_no_missing_extensions(void) {
-  const char *missing[] = {"f", "d", "v", "svadu"};
+  const char *missing[] = {"q", "zfh", "v", "svadu"};
   for (unsigned i = 0; i < sizeof missing / sizeof missing[0]; i++)
     TEST_ASSERT_FALSE_MESSAGE(
         has_string(CPU, "riscv,isa-extensions", missing[i]), missing[i]);

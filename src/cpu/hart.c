@@ -98,6 +98,7 @@ static void step_instruction(Cpu *cpu, bool triggers_armed) {
 
 void cpu_step(Cpu *cpu) {
   Csr *csr = cpu_get_csr(cpu);
+  cpu_set_waiting(cpu, false);
   if (!csr_triggers_armed(csr)) {
     step_instruction(cpu, false);
     return;

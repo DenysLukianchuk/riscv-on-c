@@ -112,3 +112,7 @@ struct BusDevice clint_bus_device(Clint *clint, uxlen_t base) {
 }
 
 uint64_t clint_mtime(const Clint *clint) { return clint->mtime; }
+
+void clint_set_mtime(Clint *clint, uint64_t mtime) { clint->mtime = mtime; }
+
+uint64_t clint_mtimecmp(const Clint *clint) { return clint->mtimecmp; }

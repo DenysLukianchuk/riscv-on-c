@@ -41,7 +41,11 @@ list(REMOVE_ITEM CORE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/main.c)
 add_library(riscv_core STATIC ${CORE_SOURCES})
 target_include_directories(riscv_core PUBLIC include)
 target_compile_definitions(riscv_core PUBLIC XLEN=${XLEN})
-target_link_libraries(riscv_core PUBLIC project_options)
+target_link_libraries(riscv_core PUBLIC project_options m)
+# Floating-point arithmetic runs on the host FPU under the guest's rounding
+# mode; see src/cpu/fpu.c.
+set_source_files_properties(src/cpu/fpu.c PROPERTIES COMPILE_OPTIONS
+                            "-frounding-math;-fsignaling-nans")
 
 add_executable(riscv src/main.c)
 target_link_libraries(riscv PRIVATE riscv_core)
@@ -105,14 +109,14 @@ if(BUILD_TESTING AND RISCV_TESTS AND RISCV_GCC)
   target_link_libraries(riscv_tests_runner PRIVATE riscv_core)
 
   set(RISCV_TESTS_DIR ${CMAKE_BINARY_DIR}/riscv-tests)
-  set(RISCV_TEST_SUITES ui um ua uc mi si)
+  set(RISCV_TEST_SUITES ui um ua uf ud uc mi si)
   # Privileged tests are enabled one by one as the features they need land.
   set(RISCV_MI_TESTS
       ld-misaligned lh-misaligned lw-misaligned sd-misaligned sh-misaligned
       sw-misaligned ma_addr mcsr sbreak scall shamt zicntr instret_overflow
       csr ma_fetch breakpoint)
   set(RISCV_SI_TESTS csr ma_fetch sbreak scall dirty icache-alias wfi)
-  set(RISCV_V_SUITES ui um ua uc)
+  set(RISCV_V_SUITES ui um ua uf ud uc)
   foreach(suite IN LISTS RISCV_TEST_SUITES)
     file(GLOB RISCV_TEST_SOURCES ${riscv_tests_SOURCE_DIR}/isa/rv${XLEN}${suite}/*.S)
     foreach(test_source IN LISTS RISCV_TEST_SOURCES)
@@ -121,6 +125,11 @@ if(BUILD_TESTING AND RISCV_TESTS AND RISCV_GCC)
         continue()
       endif()
       if(suite STREQUAL "si" AND NOT name IN_LIST RISCV_SI_TESTS)
+        continue()
+      endif()
+      # rv32ud/move moves doubles through x registers, which only RV64 can;
+      # upstream leaves it out of the RV32 build too.
+      if(XLEN EQUAL 32 AND suite STREQUAL "ud" AND name STREQUAL "move")
         continue()
       endif()
       set(test_name rv${XLEN}${suite}-p-${name})

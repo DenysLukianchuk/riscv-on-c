@@ -25,16 +25,18 @@ struct ModeRegs {
 #define MIP_WRITABLE (SSIP | STIP | SEIP)
 #define MIE_WRITABLE (SSIP | MSIP | STIP | MTIP | SEIP | MEIP)
 
+#define MSTATUS_SD_BIT ((uxlen_t)1 << (XLEN - 1))
+
 #define MSTATUS_WRITABLE                                                       \
   (SSTATUS_SIE_BIT | MSTATUS_MIE_BIT | SSTATUS_SPIE_BIT | MSTATUS_MPIE_BIT |   \
    SSTATUS_SPP_BIT | MSTATUS_MPP_MASK | MSTATUS_TW_BIT | SSTATUS_SUM_BIT |     \
-   SSTATUS_MXR_BIT | MSTATUS_MPRV_BIT | MSTATUS_TVM_BIT)
+   SSTATUS_MXR_BIT | MSTATUS_MPRV_BIT | MSTATUS_TVM_BIT | SSTATUS_FS_BIT)
 // MPP value 2 would name H-mode, which this hart does not implement.
 #define MSTATUS_MPP_RESERVED ((uxlen_t)2 << MSTATUS_MPP_SHIFT)
 
 #define SSTATUS_MASK                                                           \
   (SSTATUS_SIE_BIT | SSTATUS_SPIE_BIT | SSTATUS_SPP_BIT | SSTATUS_SUM_BIT |    \
-   SSTATUS_MXR_BIT)
+   SSTATUS_MXR_BIT | SSTATUS_FS_BIT)
 
 #define CAUSE_BIT(cause) ((uxlen_t)1 << (cause))
 #define MEDELEG_WRITABLE                                                       \
@@ -63,6 +65,15 @@ struct ModeRegs {
 #define MSTATUS_SXL_64 ((uxlen_t)2 << 34)
 #endif
 
+#define MSTATUS_FS_LOW_BIT 13
+#define MSTATUS_FS_HIGH_BIT 14
+enum FsStatus { FS_OFF = 0, FS_INITIAL = 1, FS_CLEAN = 2, FS_DIRTY = 3 };
+
+#define FCSR_MASK 0xFF
+#define FCSR_FFLAGS_MASK 0x1F
+#define FCSR_FRM_MASK 0xE0
+#define FCSR_FRM_SHIFT 5
+
 struct Csr {
   struct ModeRegs m, s;
   struct TriggerModule trigger;
@@ -82,6 +93,7 @@ struct Csr {
   bool seip_line;
   uxlen_t satp;
   uint64_t time;
+  uint8_t fcsr;
 };
 
 static void mode_regs_init(struct ModeRegs *regs) {
@@ -109,7 +121,8 @@ void csr_reset(Csr *csr) {
   csr->mstatus = 0;
 #endif
   csr->mie = 0;
-  csr->misa = MISA_MXL | MISA_I | MISA_M | MISA_U | MISA_S | MISA_A | MISA_C;
+  csr->misa = MISA_MXL | MISA_I | MISA_M | MISA_U | MISA_S | MISA_A | MISA_C |
+              MISA_F | MISA_D;
   csr->mvendorid = 0;
   csr->marchid = 0;
   csr->mimpid = 0;
@@ -122,6 +135,7 @@ void csr_reset(Csr *csr) {
   csr->seip_line = false;
   csr->satp = 0;
   csr->time = 0;
+  csr->fcsr = 0;
   trigger_regs_init(&csr->trigger);
 }
 
@@ -143,6 +157,25 @@ static inline bool counteren_accessible(Csr *csr, enum Counteren counter,
     return men & sen & counter;
   }
   return false;
+}
+
+static unsigned get_status_fs(uxlen_t mstatus) {
+  return bits(mstatus, MSTATUS_FS_HIGH_BIT, MSTATUS_FS_LOW_BIT);
+}
+
+bool csr_fp_enabled(Csr *csr) { return get_status_fs(csr->mstatus) != FS_OFF; }
+
+void csr_set_fp_dirty(Csr *csr) {
+  csr->mstatus |= (FS_DIRTY << MSTATUS_FS_LOW_BIT);
+}
+
+uint8_t csr_get_frm(Csr *csr) { return csr->fcsr >> FCSR_FRM_SHIFT; }
+
+void csr_accrue_fflags(Csr *csr, uint8_t flags) {
+  if (flags == 0)
+    return;
+  csr->fcsr |= flags & FCSR_FFLAGS_MASK;
+  csr_set_fp_dirty(csr);
 }
 
 static inline bool csr_is_accessible(Csr *csr, uint16_t addr,
@@ -167,6 +200,10 @@ static inline bool csr_is_accessible(Csr *csr, uint16_t addr,
     return counteren_accessible(csr, COUNTEREN_IR, privilege);
   case CSR_REG_SATP:
     return (privilege == PRIV_M) || !(csr->mstatus & MSTATUS_TVM_BIT);
+  case CSR_REG_FCSR:
+  case CSR_REG_FRM:
+  case CSR_REG_FFLAGS:
+    return csr_fp_enabled(csr);
   }
   return true;
 }
@@ -176,6 +213,26 @@ static uxlen_t pending_bits(const Csr *csr) {
   if (csr->seip_line)
     pending |= SEIP;
   return pending;
+}
+
+static enum CsrResult read_status(Csr *csr, uint16_t addr, uxlen_t *value) {
+  uxlen_t mstatus = csr->mstatus;
+
+  switch (addr) {
+  case CSR_REG_MSTATUS:
+    *value = mstatus;
+    break;
+  case CSR_REG_SSTATUS:
+#if XLEN == 64
+    *value = mstatus & (SSTATUS_MASK | MSTATUS_UXL_MASK);
+#else
+    *value = mstatus & (SSTATUS_MASK);
+#endif
+    break;
+  }
+  if (get_status_fs(mstatus) == FS_DIRTY)
+    *value |= MSTATUS_SD_BIT;
+  return CSR_OK;
 }
 
 enum CsrResult csr_read(Csr *csr, uint16_t addr, enum Privilege privilege,
@@ -211,15 +268,8 @@ enum CsrResult csr_read(Csr *csr, uint16_t addr, enum Privilege privilege,
     *value = mode_regs(csr, addr)->tvec;
     return CSR_OK;
   case CSR_REG_MSTATUS:
-    *value = csr->mstatus;
-    return CSR_OK;
   case CSR_REG_SSTATUS:
-#if XLEN == 64
-    *value = csr->mstatus & (SSTATUS_MASK | MSTATUS_UXL_MASK);
-#else
-    *value = csr->mstatus & (SSTATUS_MASK);
-#endif
-    return CSR_OK;
+    return read_status(csr, addr, value);
   case CSR_REG_MIE:
     *value = csr->mie;
     return CSR_OK;
@@ -285,6 +335,15 @@ enum CsrResult csr_read(Csr *csr, uint16_t addr, enum Privilege privilege,
     *value = (uxlen_t)(csr->time >> XLEN);
     return CSR_OK;
 #endif
+  case CSR_REG_FCSR:
+    *value = csr->fcsr;
+    return CSR_OK;
+  case CSR_REG_FRM:
+    *value = csr->fcsr >> FCSR_FRM_SHIFT;
+    return CSR_OK;
+  case CSR_REG_FFLAGS:
+    *value = csr->fcsr & FCSR_FFLAGS_MASK;
+    return CSR_OK;
   default:
     return CSR_ILLEGAL;
   }
@@ -353,6 +412,14 @@ static uxlen_t legalize_satp(uxlen_t old_value, uxlen_t value) {
   uxlen_t mode = satp_mode(value);
   if (mode != SATP_MODE_PAGED && mode != SATP_MODE_BARE)
     return old_value;
+  return value;
+}
+
+static uxlen_t fcsr_write(uint16_t addr, uxlen_t old_value, uxlen_t value) {
+  if (addr == CSR_REG_FRM)
+    return (value << FCSR_FRM_SHIFT) | (old_value & ~FCSR_FRM_MASK);
+  if (addr == CSR_REG_FFLAGS)
+    return (value & FCSR_FFLAGS_MASK) | (old_value & ~FCSR_FFLAGS_MASK);
   return value;
 }
 
@@ -434,6 +501,12 @@ enum CsrResult csr_write(Csr *csr, uint16_t addr, enum Privilege privilege,
     return CSR_OK;
   case CSR_REG_SATP:
     csr->satp = legalize_satp(csr->satp, value);
+    return CSR_OK;
+  case CSR_REG_FCSR:
+  case CSR_REG_FRM:
+  case CSR_REG_FFLAGS:
+    csr->fcsr = (fcsr_write(addr, csr->fcsr, value) & FCSR_MASK);
+    csr_set_fp_dirty(csr);
     return CSR_OK;
   default:
     return CSR_ILLEGAL;

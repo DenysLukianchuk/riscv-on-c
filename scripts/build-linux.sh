@@ -1,14 +1,18 @@
 #!/bin/sh
 # Builds a Linux image for the emulator: the kernel with its user space in an
 # initramfs, inside OpenSBI's fw_payload so that the emulator loads a single
-# ELF. Everything is built for rv64imac, without floating-point instructions.
+# ELF. hello and shell are built for rv64imac, without floating-point
+# instructions; alpine runs a distribution built for rv64gc.
 #
-# Usage: scripts/build-linux.sh [hello|shell] [work-dir]
-#   hello  a nolibc /init that greets from U-mode and powers off (default;
-#          about a minute)
-#   shell  busybox and musl from Buildroot, with a login on the console
-#          (about ten minutes the first time, as Buildroot builds its own
-#          compiler)
+# Usage: scripts/build-linux.sh [hello|shell|alpine] [work-dir]
+#   hello   a nolibc /init that greets from U-mode and powers off (default;
+#           about a minute)
+#   shell   busybox and musl from Buildroot, with a login on the console
+#           (about ten minutes the first time, as Buildroot builds its own
+#           compiler)
+#   alpine  the Alpine Linux mini root filesystem with a login on the
+#           console, on a kernel that saves and restores the F and D
+#           registers (about a minute)
 # Result: <work-dir>/fw_payload.elf and the kernel's <work-dir>/linux.config;
 # the default work-dir is build/linux-<image>.
 set -eu
@@ -17,15 +21,17 @@ LINUX_VERSION=6.18.59
 LINUX_SHA256=53a55ac9863a5547e292b8e381d4e4c2240dd1127d5428a7c44dbc550be23963
 OPENSBI_VERSION=v1.9
 BUILDROOT_VERSION=2026.08.1
+ALPINE_VERSION=3.24.3
+ALPINE_SHA256=9714553757e7bf645eff5dcc52bdd206f358a7bed77874842567852e8326a51d
 CROSS=riscv64-linux-gnu-
 ISA=rv64imac_zicsr_zifencei
 JOBS=$(nproc)
 
 image=${1:-hello}
 case $image in
-hello | shell) ;;
+hello | shell | alpine) ;;
 *)
-	echo "usage: $0 [hello|shell] [work-dir]" >&2
+	echo "usage: $0 [hello|shell|alpine] [work-dir]" >&2
 	exit 2
 	;;
 esac
@@ -70,6 +76,35 @@ nod /dev/console 600 0 0 c 5 1
 file /init $work/init.elf 755 0 0
 EOF
 	initramfs="$work/initramfs.list"
+elif [ $image = alpine ]; then
+	alpine=alpine-minirootfs-$ALPINE_VERSION-riscv64.tar.gz
+	if [ ! -f $alpine ]; then
+		curl -sSfLO https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION%.*}/releases/riscv64/$alpine
+		echo "$ALPINE_SHA256  $alpine" | sha256sum -c -
+	fi
+	rm -rf rootfs
+	mkdir rootfs
+	tar xzf $alpine -C rootfs
+	# The mini root filesystem has no OpenRC: busybox init mounts the kernel
+	# file systems and puts a login on the serial console.
+	cat > rootfs/etc/inittab <<'EOF'
+::sysinit:/bin/mount -t proc proc /proc
+::sysinit:/bin/mount -t sysfs sysfs /sys
+::sysinit:/bin/mount -t devtmpfs devtmpfs /dev
+::sysinit:/bin/mkdir -p /dev/pts /dev/shm
+::sysinit:/bin/mount -t devpts devpts /dev/pts
+::sysinit:/bin/hostname -F /etc/hostname
+ttyS0::respawn:/sbin/getty -L 115200 ttyS0 vt100
+::shutdown:/bin/umount -a -r
+EOF
+	echo riscv-on-c > rootfs/etc/hostname
+	sed -i 's/^root:[^:]*:/root::/' rootfs/etc/shadow
+	# The console has to exist before devtmpfs is mounted over /dev.
+	cat > console.list <<EOF
+dir /dev 755 0 0
+nod /dev/console 600 0 0 c 5 1
+EOF
+	initramfs="$work/rootfs $work/console.list"
 else
 	if [ ! -d buildroot ]; then
 		git clone -q --depth 1 --branch $BUILDROOT_VERSION \
@@ -91,14 +126,22 @@ $config \
 	-e SERIAL_OF_PLATFORM -e SERIAL_EARLYCON -e SERIAL_EARLYCON_RISCV_SBI \
 	-e HVC_RISCV_SBI -e RISCV_SBI_V01 -e SIFIVE_PLIC -e BINFMT_ELF \
 	-e BLK_DEV_INITRD --set-str INITRAMFS_SOURCE "$initramfs" \
+	-d HZ_PERIODIC -e NO_HZ_IDLE \
 	--set-str CMDLINE "earlycon=sbi console=ttyS0"
-if [ $image = shell ]; then
+if [ $image != hello ]; then
 	# What busybox's init, its scripts and musl expect of the kernel.
 	$config \
 		-e PROC_FS -e PROC_SYSCTL -e SYSFS -e TMPFS -e DEVTMPFS \
 		-e DEVTMPFS_MOUNT -e BINFMT_SCRIPT -e MULTIUSER -e FUTEX -e EPOLL \
 		-e SIGNALFD -e TIMERFD -e EVENTFD -e POSIX_TIMERS -e FILE_LOCKING \
 		-e SHMEM -e INOTIFY_USER -e UNIX98_PTYS -e NET -e UNIX -e INET
+fi
+if [ $image = alpine ]; then
+	# The files in rootfs belong to the user running this script; the
+	# initramfs gives them to root.
+	$config -e FPU --set-val INITRAMFS_ROOT_UID "$(id -u)" \
+		--set-val INITRAMFS_ROOT_GID "$(id -g)" \
+		--set-str CMDLINE "earlycon=sbi console=ttyS0 rdinit=/sbin/init"
 fi
 $kmake olddefconfig
 $kmake -j"$JOBS" Image

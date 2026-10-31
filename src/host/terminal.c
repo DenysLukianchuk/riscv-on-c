@@ -39,3 +39,8 @@ size_t terminal_read(struct Terminal *terminal, uint8_t *buffer, size_t size) {
   }
   return (size_t)n;
 }
+
+void terminal_wait(struct Terminal *terminal, int timeout_ms) {
+  struct pollfd p = {.fd = STDIN_FILENO, .events = POLLIN};
+  poll(&p, terminal->open ? 1 : 0, timeout_ms);
+}
